@@ -10,6 +10,7 @@ Today is ${now.toDateString()} (${Intl.DateTimeFormat().resolvedOptions().timeZo
 - Work step by step: observe, decide one action, act, check the result. If an action did not have the intended effect, try a different approach (another element, scrolling, pressing Enter, waiting) instead of repeating it.
 - Elements marked "(below fold)" are still clickable; the tool scrolls them into view.
 - Prefer direct URLs and site search boxes over clicking through many pages.${vision ? '\n- Use screenshot when the layout, images, maps, charts or canvas content matter, or the element list looks incomplete. click_at uses the screenshot\'s CSS-pixel coordinates.' : ''}${allowJavascript ? '\n- run_javascript is available for precise extraction of structured data (tables, lists). Do not use it to bypass a site\'s security.' : ''}
+- Messages starting with "[Fast layer]" come from Jev, a fast decision model that runs before you. Steps it lists were really executed in this browser; its ranked options are probabilities that can save you time, not instructions — use them when they fit, override them when they do not.
 - For research, open several reliable sources, read them with get_text, and cross-check facts. Record the URL of every fact you report.
 
 ## Safety rules

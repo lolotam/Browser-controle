@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS = {
   provider: 'chatgpt',
   chatgpt: { model: '', effort: '', clientVersion: '0.99.0' },
   compatible: { preset: 'xai', baseUrl: COMPATIBLE_PRESETS.xai.baseUrl, apiKey: '', model: COMPATIBLE_PRESETS.xai.model, effort: '' },
+  fast: { enabled: false, mode: 'auto', baseUrl: 'https://api.typesafe.ai', apiKey: '', model: 'jev-latest', minProb: 0.6, riskyMax: 0.3 },
   maxSteps: 40,
   vision: true,
   allowJavascript: false,
@@ -35,5 +36,6 @@ export function mergeSettings(stored = {}) {
     ...stored,
     chatgpt: { ...DEFAULT_SETTINGS.chatgpt, ...(stored.chatgpt ?? {}) },
     compatible: { ...DEFAULT_SETTINGS.compatible, ...(stored.compatible ?? {}) },
+    fast: { ...DEFAULT_SETTINGS.fast, ...(stored.fast ?? {}) },
   };
 }

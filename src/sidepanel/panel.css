@@ -26,6 +26,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
 body {
   font: 14px/1.55 system-ui, "Segoe UI", Tahoma, sans-serif;
@@ -119,3 +120,7 @@ main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .device code { display: block; font-size: 22px; letter-spacing: 3px; text-align: center; padding: 8px; margin: 6px 0; }
 details summary { cursor: pointer; color: var(--muted); }
 details[open] { display: flex; flex-direction: column; gap: 6px; }
+.fields { display: flex; flex-direction: column; gap: 10px; }
+.grow { flex: 1; min-width: 0; }
+.step.fast .mark::after { content: ' ⚡'; }
+.handoff { font-size: 12px; color: var(--muted); font-style: italic; }

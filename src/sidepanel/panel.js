@@ -23,7 +23,7 @@ port.onMessage.addListener(onEvent);
 function onEvent(event) {
   switch (event.type) {
     case 'replay':
-      $('messages').querySelectorAll('.msg, .step').forEach((n) => n.remove());
+      $('messages').querySelectorAll('.msg, .step, .handoff').forEach((n) => n.remove());
       ui.steps.clear();
       event.events.forEach(onEvent);
       setRunning(event.running);
@@ -55,6 +55,9 @@ function onEvent(event) {
       break;
     case 'tool-start':
       addStep(event);
+      break;
+    case 'fast-handoff':
+      add('handoff', `⚡→🧠 ${event.reason}`);
       break;
     case 'tool-end': {
       const row = ui.steps.get(event.step + event.name);
@@ -106,10 +109,10 @@ function add(className, text) {
   return node;
 }
 
-function addStep({ step, name, args }) {
+function addStep({ step, name, args, fast }) {
   $('emptyState').hidden = true;
   const row = document.createElement('div');
-  row.className = 'step';
+  row.className = fast ? 'step fast' : 'step';
   const compact = JSON.stringify(args ?? {}).replace(/^\{|\}$/g, '');
   row.innerHTML = '<span class="mark">…</span><span class="name"></span><span class="args"></span>';
   row.querySelector('.name').textContent = `${step}. ${name}`;
@@ -168,7 +171,7 @@ $('input').addEventListener('keydown', (e) => {
 $('stopBtn').addEventListener('click', () => port.postMessage({ type: 'stop' }));
 $('newChatBtn').addEventListener('click', () => {
   port.postMessage({ type: 'new-chat' });
-  $('messages').querySelectorAll('.msg, .step').forEach((n) => n.remove());
+  $('messages').querySelectorAll('.msg, .step, .handoff').forEach((n) => n.remove());
   $('emptyState').hidden = false;
 });
 document.querySelectorAll('.examples li').forEach((li) => li.addEventListener('click', () => {
@@ -208,6 +211,14 @@ function fillForm() {
   $('vision').checked = settings.vision;
   $('allowJavascript').checked = settings.allowJavascript;
   $('modelInput').value = activeModel();
+  $('fastEnabled').checked = settings.fast.enabled;
+  $('fastMode').value = settings.fast.mode;
+  $('fastApiKey').value = settings.fast.apiKey;
+  $('fastModel').value = settings.fast.model;
+  $('fastBaseUrl').value = settings.fast.baseUrl;
+  $('fastMinProb').value = settings.fast.minProb;
+  $('fastRiskyMax').value = settings.fast.riskyMax;
+  syncFast();
   syncSections();
   renderEfforts(currentProviderSettings().effort);
 }
@@ -222,11 +233,40 @@ function readForm() {
   const target = provider === 'chatgpt' ? next.chatgpt : next.compatible;
   target.model = $('modelInput').value.trim();
   target.effort = $('effort').value;
+  next.fast = readFastForm();
   next.maxSteps = Number($('maxSteps').value) || 40;
   next.vision = $('vision').checked;
   next.allowJavascript = $('allowJavascript').checked;
   return next;
 }
+
+function readFastForm() {
+  return {
+    enabled: $('fastEnabled').checked,
+    mode: $('fastMode').value,
+    apiKey: $('fastApiKey').value.trim(),
+    model: $('fastModel').value.trim() || 'jev-latest',
+    baseUrl: $('fastBaseUrl').value.trim() || 'https://api.typesafe.ai',
+    minProb: Number($('fastMinProb').value) || 0.6,
+    riskyMax: Number($('fastRiskyMax').value) || 0.3,
+  };
+}
+
+function syncFast() {
+  $('fastFields').hidden = !$('fastEnabled').checked;
+}
+
+$('fastEnabled').addEventListener('change', syncFast);
+$('fastTestBtn').addEventListener('click', async () => {
+  $('fastTestResult').textContent = 'جاري الاختبار…';
+  const started = performance.now();
+  try {
+    const { model } = await request('jev-test', { config: readFastForm() });
+    $('fastTestResult').textContent = `✓ شغال (${model}) في ${Math.round(performance.now() - started)}ms`;
+  } catch (err) {
+    $('fastTestResult').textContent = `✗ ${err.message}`;
+  }
+});
 
 function currentProviderSettings(s = settings) {
   return s.provider === 'chatgpt' ? s.chatgpt : s.compatible;
@@ -245,6 +285,14 @@ function syncSections() {
 $('provider').addEventListener('change', () => {
   settings = readFormKeepingModel();
   $('modelInput').value = activeModel();
+  $('fastEnabled').checked = settings.fast.enabled;
+  $('fastMode').value = settings.fast.mode;
+  $('fastApiKey').value = settings.fast.apiKey;
+  $('fastModel').value = settings.fast.model;
+  $('fastBaseUrl').value = settings.fast.baseUrl;
+  $('fastMinProb').value = settings.fast.minProb;
+  $('fastRiskyMax').value = settings.fast.riskyMax;
+  syncFast();
   syncSections();
   models = [];
   renderModels();
@@ -356,6 +404,10 @@ $('saveBtn').addEventListener('click', async () => {
     showSettingsError('اختر موديل الأول.');
     return;
   }
+  if (next.fast.enabled && !next.fast.apiKey) {
+    showSettingsError('الطبقة السريعة محتاجة TypeSafe API key.');
+    return;
+  }
   settings = await request('save-settings', { settings: next });
   updateChip();
   toggleSettings(false);
@@ -364,7 +416,8 @@ $('saveBtn').addEventListener('click', async () => {
 function updateChip() {
   const p = currentProviderSettings();
   const label = settings.provider === 'chatgpt' ? 'ChatGPT' : presets[settings.compatible.preset]?.label ?? 'API';
-  $('modelChip').textContent = p.model ? `${label} · ${p.model}${p.effort ? ` · ${p.effort}` : ''}` : 'لم يتم اختيار موديل';
+  const fastTag = settings.fast.enabled && settings.fast.apiKey ? ' · ⚡Jev' : '';
+  $('modelChip').textContent = p.model ? `${label} · ${p.model}${p.effort ? ` · ${p.effort}` : ''}${fastTag}` : 'لم يتم اختيار موديل';
 }
 
 function showSettingsError(message) {

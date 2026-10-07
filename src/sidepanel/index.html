@@ -114,6 +114,36 @@
       <label class="check"><input type="checkbox" id="allowJavascript" /> السماح للوكيل بتشغيل JavaScript في الصفحات (قوي لكن أخطر)</label>
     </div>
 
+    <div class="card">
+      <label class="check"><input type="checkbox" id="fastEnabled" /> <strong>⚡ الطبقة السريعة — Jev من TypeSafe</strong></label>
+      <p class="muted">Jev بيقرر الخطوات الواضحة (ضغط، كتابة نص مكتوب بين علامات تنصيص في المهمة، Enter، سكرول، رجوع) في أقل من ثانية من غير ما يستنى الموديل الكبير. ولما ما يبقاش متأكد، أو الخطوة حساسة، بيسلّمها للموديل الكبير ومعاها ترتيب الاختيارات بالاحتمالات.</p>
+      <div id="fastFields" class="fields">
+        <label class="field">
+          <span>الوضع</span>
+          <select id="fastMode">
+            <option value="auto">تنفيذ تلقائي للخطوات الواثقة + اقتراحات للموديل</option>
+            <option value="hints">اقتراحات للموديل فقط (أأمن، أبطأ)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>TypeSafe API Key</span>
+          <input id="fastApiKey" type="password" dir="ltr" autocomplete="off" />
+        </label>
+        <div class="row">
+          <label class="field grow"><span>الموديل</span><input id="fastModel" dir="ltr" /></label>
+          <label class="field grow"><span>Base URL</span><input id="fastBaseUrl" dir="ltr" /></label>
+        </div>
+        <div class="row">
+          <label class="field grow"><span>أقل ثقة للتنفيذ</span><input id="fastMinProb" type="number" min="0.3" max="0.99" step="0.05" /></label>
+          <label class="field grow"><span>حد الخطوات الحساسة</span><input id="fastRiskyMax" type="number" min="0.05" max="0.9" step="0.05" /></label>
+        </div>
+        <div class="row">
+          <button type="button" id="fastTestBtn">اختبار الاتصال</button>
+          <small class="muted" id="fastTestResult"></small>
+        </div>
+      </div>
+    </div>
+
     <p class="error" id="settingsError" hidden></p>
     <div class="row end">
       <button type="button" id="closeSettingsBtn">رجوع</button>

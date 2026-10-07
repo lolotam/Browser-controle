@@ -11,6 +11,28 @@
 | **Z.ai GLM** | API key (أو مفتاح GLM Coding Plan) | فيه preset لـ Coding Plan و preset للـ API العادي |
 | OpenAI API / OpenRouter / أي سيرفر متوافق | API key + Base URL | |
 
+## ⚡ الطبقة السريعة: Jev من TypeSafe (اختياري)
+
+[Jev](https://typesafe.ai) موديل "System One": **ما بيكتبش نص خالص**. بيستقبل حالة الصفحة وأسئلة محددة، ويرجّع اختيارات بالاحتمالات في أقل من ثانية. علشان كده بنحطه **طبقة قبل الـ LLM**:
+
+1. في كل خطوة، Jev بيتسأل سؤال واحد فيه: العملية الجاية (ضغط / كتابة / Enter / سكرول / رجوع / خلصت / محتاج تفكير)، والعنصر، والنص، وهل الهدف اتحقق، وهل الخطوة حساسة.
+2. **لو واثق والخطوة آمنة** → بتتنفذ فورًا من غير ما الـ LLM يتنادى (⚡ في الواجهة).
+3. **لو مش واثق، أو الخطوة حساسة، أو محتاجة كتابة نص جديد أو تحليل** → الخطوة بتروح للـ LLM، ومعاها ملخص اللي Jev عمله والاختيارات مترتبة بالاحتمالات، فالـ LLM يقرر أسرع.
+4. لما Jev يحس إن المهمة خلصت، الـ LLM بيتأكد ويكتب التقرير النهائي (Jev ما بيكتبش).
+
+**الوضعين:**
+- `auto`: تنفيذ تلقائي للخطوات الواثقة + اقتراحات.
+- `hints`: اقتراحات للـ LLM بس. أأمن، بس أبطأ.
+
+**حدود لازم تعرفها:**
+- Jev بيكتب **بس** النصوص اللي انت كاتبها بين علامات تنصيص في المهمة (`"..."` أو `«...»` أو `“...”`)، أو اللي الـ LLM كتبها قبل كده. أي نص جديد بيروح للـ LLM.
+- Jev ما بيكتبش أبدًا في حقول الباسورد، ولا بينفذ خطوة شكلها حساس (دفع، إرسال، حذف، تسجيل دخول).
+- بعد 8 خطوات سريعة ورا بعض، الـ LLM لازم يراجع.
+- لو Jev فشل 3 مرات، الطبقة بتقفل نفسها وبيكمل الـ LLM لوحده.
+- Jev متدرّب أساسًا على الإنجليزي (English-first)، فالمهام والمواقع العربية ممكن ثقته فيها تبقى أقل، وبالتالي تتحول للـ LLM أكتر.
+- لما الطبقة تبقى شغالة، نص الصفحة وقائمة عناصرها بيتبعتوا لـ TypeSafe، زي ما بيتبعتوا للـ LLM بالظبط.
+- محتاج TypeSafe API key من [console.typesafe.ai](https://console.typesafe.ai). التسجيل كان متوقف مؤقتًا بسبب الضغط في سبتمبر 2026.
+
 ## التثبيت
 
 1. افتح `chrome://extensions` وفعّل **Developer mode**.
@@ -56,6 +78,8 @@ src/
   providers/chatgpt-auth.js      تسجيل دخول ChatGPT بالـ device code + refresh
   providers/chatgpt.js           Responses API على backend Codex
   providers/openai-compatible.js Chat Completions (Grok / GLM / OpenAI / OpenRouter)
+  fast/jev-client.js             TypeSafe System One API (POST /v1/systemone)
+  fast/fast-layer.js             أسئلة Jev + قواعد التنفيذ أو التحويل للـ LLM
   sidepanel/                     الواجهة (عربي RTL) + عارض Markdown آمن
 test/                            اختبارات unit (node:test) + اختبار E2E
 ```
@@ -66,6 +90,6 @@ test/                            اختبارات unit (node:test) + اختبا�
 cd browser-agent-extension
 npm test          # اختبارات unit — مش محتاجة تثبيت
 npm install
-npm run e2e       # بيحمّل الإكستنشن في Chromium مع موديل وهمي ويتأكد إنه بيكتب ويختار ويضغط ويطلّع تقرير
+npm run e2e       # بيحمّل الإكستنشن في Chromium مع موديلات وهمية: سيناريو LLM كامل + سيناريو Jev السريع (LLM بيتنادى مرة واحدة بس)
 # لو Chromium بتاع Playwright مش متثبت: CHROMIUM_PATH=/path/to/chrome npm run e2e
 ```
