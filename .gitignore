@@ -1,0 +1,8 @@
+node_modules/
+test-results/
+*.log
+.DS_Store
+*.zip
+*.crx
+*.pem
+.env*

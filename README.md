@@ -1,95 +1,44 @@
-# Browser Agent — إكستنشن كروم بيتحكم في البراوزر بالذكاء الاصطناعي
+# Browser Controle — AI agent that operates your Chrome
 
-وكيل بيشتغل من اللوحة الجانبية (Side Panel) في كروم. بتديله مهمة بالعربي أو الإنجليزي، فينفذها خطوة بخطوة في البراوزر بتاعك (بحث، ضغط، كتابة، اختيار من قوائم، سكرول، تنقل بين التابات، قراءة وتجميع معلومات)، وفي الآخر بيديك **تقرير نهائي** فيه النتايج والمصادر.
+A Chrome side-panel extension. Give it a task in Arabic or English and it carries it out in your real browser, one step at a time: it searches, clicks, types, picks from menus, scrolls, switches tabs, and reads and collects information. When it finishes, it returns a **final report** with the results and sources.
 
-## المزوّدين المدعومين
+**Current focus:** it runs on the model access included in your **ChatGPT plan**, the same sign-in the official Codex CLI uses. You choose the model and the reasoning effort. Other providers come later.
 
-| المزوّد | طريقة الدخول | ملاحظات |
-|---|---|---|
-| **اشتراك ChatGPT** (Plus / Pro / Business) | تسجيل دخول بحساب ChatGPT (نفس طريقة Codex CLI) | الموديلات ومستويات التفكير بتتحمّل تلقائيًا من حسابك |
-| **xAI Grok** | API key من console.x.ai | اشتراك SuperGrok **مش** بيدّي API — لازم API key منفصل |
-| **Z.ai GLM** | API key (أو مفتاح GLM Coding Plan) | فيه preset لـ Coding Plan و preset للـ API العادي |
-| OpenAI API / OpenRouter / أي سيرفر متوافق | API key + Base URL | |
+👉 **[Full setup guide → docs/SETUP.md](docs/SETUP.md)** · Arabic overview: [docs/README.ar.md](docs/README.ar.md)
 
-## ⚡ الطبقة السريعة: Jev من TypeSafe (اختياري)
+## Quick start
 
-[Jev](https://typesafe.ai) موديل "System One": **ما بيكتبش نص خالص**. بيستقبل حالة الصفحة وأسئلة محددة، ويرجّع اختيارات بالاحتمالات في أقل من ثانية. علشان كده بنحطه **طبقة قبل الـ LLM**:
+1. Clone the repo:
+   ```bash
+   git clone https://github.com/lolotam/Browser-controle.git
+   ```
+2. In `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and select the repo folder.
+3. Open the side panel (**Alt+Shift+A**) and click **Sign in with ChatGPT**. Enter the code shown in the panel at `auth.openai.com/codex/device`.
+4. Pick a model and a reasoning effort, then click **Save**.
+5. Open any website and type a task.
 
-1. في كل خطوة، Jev بيتسأل سؤال واحد فيه: العملية الجاية (ضغط / كتابة / Enter / سكرول / رجوع / خلصت / محتاج تفكير)، والعنصر، والنص، وهل الهدف اتحقق، وهل الخطوة حساسة.
-2. **لو واثق والخطوة آمنة** → بتتنفذ فورًا من غير ما الـ LLM يتنادى (⚡ في الواجهة).
-3. **لو مش واثق، أو الخطوة حساسة، أو محتاجة كتابة نص جديد أو تحليل** → الخطوة بتروح للـ LLM، ومعاها ملخص اللي Jev عمله والاختيارات مترتبة بالاحتمالات، فالـ LLM يقرر أسرع.
-4. لما Jev يحس إن المهمة خلصت، الـ LLM بيتأكد ويكتب التقرير النهائي (Jev ما بيكتبش).
+## Features
 
-**الوضعين:**
-- `auto`: تنفيذ تلقائي للخطوات الواثقة + اقتراحات.
-- `hints`: اقتراحات للـ LLM بس. أأمن، بس أبطأ.
+- **Trusted input:** clicks and keystrokes go through the Chrome DevTools Protocol, so they work on sites that ignore synthetic events.
+- **Page understanding:** numbered interactive elements (including inside shadow DOM), visible text, and screenshots for vision-capable models.
+- **Tools:** navigate, search, click, type, press keys, select options, hover, scroll, read long pages, history, and tab management. JavaScript extraction is optional.
+- **Safety:** the agent must ask you before payments, sending messages, deleting data or typing passwords. Page text is treated as untrusted.
+- **Optional fast layer:** a ⚡ layer based on TypeSafe's Jev decision model can run confident steps without an LLM call. It is experimental.
 
-**حدود لازم تعرفها:**
-- Jev بيكتب **بس** النصوص اللي انت كاتبها بين علامات تنصيص في المهمة (`"..."` أو `«...»` أو `“...”`)، أو اللي الـ LLM كتبها قبل كده. أي نص جديد بيروح للـ LLM.
-- Jev ما بيكتبش أبدًا في حقول الباسورد، ولا بينفذ خطوة شكلها حساس (دفع، إرسال، حذف، تسجيل دخول).
-- بعد 8 خطوات سريعة ورا بعض، الـ LLM لازم يراجع.
-- لو Jev فشل 3 مرات، الطبقة بتقفل نفسها وبيكمل الـ LLM لوحده.
-- Jev متدرّب أساسًا على الإنجليزي (English-first)، فالمهام والمواقع العربية ممكن ثقته فيها تبقى أقل، وبالتالي تتحول للـ LLM أكتر.
-- لما الطبقة تبقى شغالة، نص الصفحة وقائمة عناصرها بيتبعتوا لـ TypeSafe، زي ما بيتبعتوا للـ LLM بالظبط.
-- محتاج TypeSafe API key من [console.typesafe.ai](https://console.typesafe.ai). التسجيل كان متوقف مؤقتًا بسبب الضغط في سبتمبر 2026.
+## Status
 
-## التثبيت
+| Part | State |
+|---|---|
+| Browser control + agent loop | ✅ Covered by unit tests and a Chromium end-to-end test (mock model) |
+| Codex / ChatGPT subscription | 🟡 Implemented from the Codex CLI source and tested with mocks; **needs validation on a real account** |
+| Other providers (Grok, GLM, OpenAI API, OpenRouter) | ⏳ Code exists but has not been tested with the real services; planned |
+| Jev fast layer | ⏳ Experimental, tested with mocks only |
 
-1. افتح `chrome://extensions` وفعّل **Developer mode**.
-2. اضغط **Load unpacked** واختار فولدر `browser-agent-extension`.
-3. اضغط أيقونة الإكستنشن (أو `Alt+Shift+A`) — اللوحة الجانبية هتفتح على الإعدادات.
+> Using a ChatGPT plan outside OpenAI's own apps is unofficial. OpenAI may change or block it at any time.
 
-## ربط اشتراك ChatGPT
-
-1. من الإعدادات اختار **اشتراك ChatGPT** واضغط **تسجيل الدخول بحساب ChatGPT**.
-2. هتتفتح صفحة `auth.openai.com/codex/device` — سجّل دخول واكتب الكود اللي ظاهر في اللوحة.
-3. بعد الموافقة، قائمة الموديلات بتتحمّل لوحدها، واختار **الموديل** و**مستوى التفكير (Reasoning effort)** — المستويات المتاحة بتتغير حسب الموديل.
-
-لو ظهر إن device code مش مفعّل: فعّل "device code authorization for Codex" من إعدادات الأمان في ChatGPT، **أو** استخدم البديل: شغّل `codex login` على جهازك والصق محتوى `~/.codex/auth.json` في خانة الاستيراد.
-
-## الأدوات اللي الوكيل بيستخدمها
-
-`read_page` · `navigate` · `web_search` · `click` · `click_at` · `type_text` · `press_key` · `select_option` · `hover` · `scroll` · `get_text` · `screenshot` · `history` · `wait` · `list_tabs` · `switch_tab` · `open_tab` · `close_tab` · `run_javascript` (اختياري) · `ask_user` · `done`
-
-- الضغط والكتابة بيتعملوا عن طريق Chrome DevTools Protocol (`chrome.debugger`)، فبيبقوا أحداث حقيقية زي المستخدم بالظبط وبيشتغلوا على المواقع اللي بتتجاهل الأحداث المصطنعة.
-- قبل الشراء/الدفع/إرسال رسائل/حذف بيانات/كتابة باسوردات، الوكيل **لازم** يسألك ويستنى موافقتك (`ask_user`).
-- محتوى الصفحات بيتعامل معاه كبيانات مش أوامر (حماية من prompt injection) — ودي حماية على مستوى الـ prompt مش ضمان كامل.
-
-## حاجات لازم تعرفها (بصراحة)
-
-- **استخدام اشتراك ChatGPT برّه تطبيقات OpenAI منطقة رمادية.** الإكستنشن بيستخدم نفس OAuth client ونفس الـ backend (`chatgpt.com/backend-api/codex`) بتوع Codex CLI. OpenAI ممكن تغيّر الـ API أو تمنعه في أي وقت، والاستخدام بيتحسب من حدود خطتك (Codex limits).
-- **مسار ChatGPT متختبرش على حساب حقيقي** في بيئة التطوير — اتختبر بـ mock مطابق لكود Codex الرسمي. أول تجربة على حسابك هي الاختبار الحقيقي؛ لو حصل خطأ، الرسالة بتظهر في الشات كما هي.
-- لما الوكيل يشتغل، كروم بيظهر شريط "Browser Agent started debugging this browser" — ده طبيعي ومطلوب لـ `chrome.debugger`.
-- كروم مش بيسمح لأي إكستنشن يتحكم في صفحات `chrome://` و Chrome Web Store.
-- التوكنز ومفاتيح الـ API متخزنة في `chrome.storage.local` على جهازك (مش متشفرة) ومش بتتبعت لأي حد غير المزوّد اللي اخترته.
-- `run_javascript` مقفول افتراضيًا لأنه بيدي الموديل صلاحية كاملة على الصفحة.
-
-## البنية
-
-```
-manifest.json
-src/
-  background/service-worker.js   تنسيق التشغيل + الرسائل مع اللوحة + تسجيل الدخول
-  agent/agent.js                 حلقة observe → decide → act
-  agent/tools.js                 تعريف الأدوات وتنفيذها
-  agent/prompt.js                تعليمات النظام وقواعد الأمان
-  browser/controller.js          التحكم عبر CDP (ضغط، كتابة، سكرول، سكرين شوت)
-  browser/page-scripts.js        سكربتات بتتحقن في الصفحة (ترقيم العناصر، قراءة النص)
-  providers/chatgpt-auth.js      تسجيل دخول ChatGPT بالـ device code + refresh
-  providers/chatgpt.js           Responses API على backend Codex
-  providers/openai-compatible.js Chat Completions (Grok / GLM / OpenAI / OpenRouter)
-  fast/jev-client.js             TypeSafe System One API (POST /v1/systemone)
-  fast/fast-layer.js             أسئلة Jev + قواعد التنفيذ أو التحويل للـ LLM
-  sidepanel/                     الواجهة (عربي RTL) + عارض Markdown آمن
-test/                            اختبارات unit (node:test) + اختبار E2E
-```
-
-## الاختبارات
+## Development
 
 ```bash
-cd browser-agent-extension
-npm test          # اختبارات unit — مش محتاجة تثبيت
-npm install
-npm run e2e       # بيحمّل الإكستنشن في Chromium مع موديلات وهمية: سيناريو LLM كامل + سيناريو Jev السريع (LLM بيتنادى مرة واحدة بس)
-# لو Chromium بتاع Playwright مش متثبت: CHROMIUM_PATH=/path/to/chrome npm run e2e
+npm test                  # unit tests
+npm install && npm run e2e
 ```

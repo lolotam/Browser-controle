@@ -1,0 +1,199 @@
+# Full Setup Guide — Codex (ChatGPT subscription) first
+
+This guide takes you from a fresh clone to running your first browser task with the model access included in your ChatGPT plan (the same access the official **Codex CLI** uses). Other providers come later; see [Roadmap](#roadmap).
+
+Time needed: about 10 minutes.
+
+---
+
+## 1. Requirements
+
+| Need | Details |
+|---|---|
+| Browser | Google Chrome **116 or newer** (or another Chromium browser that supports the Side Panel API and `chrome.debugger`: Edge, Brave, Arc). Check at `chrome://settings/help`. |
+| ChatGPT plan | A plan that includes **Codex** (Plus, Pro, Business, Edu or Enterprise). Usage counts against your plan's Codex limits. |
+| Git | To clone the repo. |
+| Node.js 20+ | **Optional.** Only needed to run the tests, or for the `auth.json` fallback login (step 4B). The extension itself has no build step. |
+
+> ⚠️ **Honest warning.** Using a ChatGPT plan from a third-party client is not an official OpenAI product. The extension uses the same OAuth client and backend (`chatgpt.com/backend-api/codex`) as the Codex CLI. OpenAI can change or block this at any time. Do not use it for anything you cannot afford to have stop working.
+
+---
+
+## 2. Get the code
+
+```bash
+git clone https://github.com/lolotam/Browser-controle.git
+cd Browser-controle
+```
+
+There is nothing to build. The folder that contains `manifest.json` (the repo root) **is** the extension.
+
+---
+
+## 3. Load the extension in Chrome
+
+1. Open `chrome://extensions`.
+2. Turn on **Developer mode** (top-right switch).
+3. Click **Load unpacked** and select the repo folder (the one with `manifest.json`).
+4. "Browser Agent" appears in the list. Click the puzzle icon in the toolbar and **pin** it.
+5. Click the icon (or press **Alt+Shift+A**). The side panel opens on **Settings** because no model is chosen yet.
+
+When you pull new code later, return to `chrome://extensions` and click the **reload ↻** button on the extension card.
+
+---
+
+## 4. Connect your ChatGPT account
+
+In the side panel's Settings, keep the provider set to **"اشتراك ChatGPT"** (ChatGPT subscription).
+
+### 4A. Recommended: device-code sign-in
+
+1. Click **"تسجيل الدخول بحساب ChatGPT"** (Sign in with ChatGPT).
+2. A new tab opens at `https://auth.openai.com/codex/device`, and the side panel shows a one-time code such as `ABCD-1234`.
+3. In that tab, sign in to ChatGPT (with 2FA if you use it), then enter the code.
+4. Approve the request. Within a few seconds the panel shows **"متصل: you@email — plus/pro"** (Connected).
+
+The code expires after 15 minutes. If it expires, click the button again.
+
+**If you get "Device-code login is not enabled":** your account or workspace has device-code authorization for Codex turned off. Enable it in ChatGPT → Settings → Security (workspace admins: the workspace security settings), or use 4B.
+
+### 4B. Fallback: import `auth.json` from the Codex CLI
+
+Use this only if 4A is not possible.
+
+```bash
+npm install -g @openai/codex
+codex login            # choose "Sign in with ChatGPT"
+```
+
+Codex writes your tokens to:
+
+| OS | Path |
+|---|---|
+| macOS / Linux | `~/.codex/auth.json` |
+| Windows | `%USERPROFILE%\.codex\auth.json` |
+
+If the file does not exist, Codex stored the tokens in your OS keychain instead. Add `cli_auth_credentials_store = "file"` to `~/.codex/config.toml`, then run `codex login` again.
+
+Open the file, copy **all** of its contents, and paste them into **"بديل: استيراد auth.json"** → **استيراد** (Import) in the panel.
+
+> ⚠️ **Gotcha: shared refresh token.** After an import, the extension and the Codex CLI hold the **same** refresh token. OpenAI rotates refresh tokens, so when one of them refreshes, the other is signed out ("session expired"). Either stop using the CLI on that login, or prefer 4A, which creates a separate session.
+
+---
+
+## 5. Choose the model and reasoning effort
+
+After you connect, the model list loads automatically from your account (`/backend-api/codex/models`). Exactly which models you see depends on your plan.
+
+1. **الموديل (Model):** pick one from the list. Press **↻** to reload it. If the list stays empty, type a model id you know from Codex into the text box.
+2. **مستوى التفكير (Reasoning effort):** the options come from the selected model, for example `low` / `medium` / `high` / `xhigh`.
+   - `low` / `medium`: faster and cheaper on your limits, and enough for most browsing.
+   - `high` / `xhigh`: for multi-step research or tricky sites.
+   - "افتراضي الموديل" uses the model's own default.
+3. **General options:**
+   - **أقصى عدد خطوات** (Max steps): default 40. One step is one browser action.
+   - **لقطات الشاشة** (Screenshots): keep this on. Codex models accept images, which helps on visual pages.
+   - **JavaScript**: leave this off unless you need precise data extraction. It gives the model full script access to pages.
+4. Click **حفظ** (Save). The chip in the header shows `ChatGPT · <model> · <effort>`.
+
+Leave **⚡ الطبقة السريعة (Jev)** off for now. It needs a separate TypeSafe API key and is covered in the Arabic overview ([README.ar.md](README.ar.md)).
+
+---
+
+## 6. Run your first task
+
+1. Open a normal website tab, e.g. `https://news.ycombinator.com`. Chrome blocks extensions on `chrome://` pages and the Web Store.
+2. In the panel, type a task, for example:
+   - `Summarise the top 5 stories on this page with their links`
+   - `ابحث عن "best budget mechanical keyboard 2026" وقارن أول 3 نتايج في جدول`
+3. Press **Enter**.
+
+What happens next:
+
+- Chrome shows a bar: **"Browser Agent started debugging this browser."** This is expected. Clicks and typing go through the DevTools protocol, so sites see real input. Clicking **Cancel** on that bar stops browser control.
+- Each step appears as a line (`✓ 3. click "index":12`). The model's reasoning summary shows in grey.
+- Before paying, sending messages, deleting data or typing passwords, the agent **asks you**. Answer in the input box.
+- When the task is done, a green **التقرير النهائي** (Final report) card shows the results and sources.
+- **إيقاف** (Stop) cancels the task at any time. **＋** starts a new chat. Follow-up messages in the same chat keep the context.
+
+---
+
+## 7. Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| "Device-code login is not enabled" | See 4A, or use 4B. |
+| "ChatGPT session expired, please sign in again" | The refresh token was revoked or rotated, often because the CLI shares it (see 4B). Sign in again with 4A. |
+| `HTTP 403` from ChatGPT | Your plan has no Codex access, or OpenAI rejected this client. Check that Codex works for you in the official CLI or app. |
+| "usage limit reached for this plan" (`HTTP 429`) | You hit your Codex limit. Wait for the reset or use a lower reasoning effort. |
+| "Instructions are not valid" or a similar `400` | The extension already retries once with a different prompt layout. If it persists, OpenAI changed the backend; open an issue with the exact message. |
+| Model list is empty | Press ↻. If it is still empty, type the model id manually. |
+| "Chrome does not allow extensions to control chrome://…" | Navigate the tab to a normal `https://` site first. |
+| Clicks land in the wrong place | Page zoom or layout shifted. The agent usually retries; you can tell it "take a screenshot first". |
+| Nothing happens / panel frozen | Open `chrome://extensions` → Browser Agent → **Inspect views: service worker** → Console, and read the error. Reload the extension. |
+
+Logging out: Settings → **تسجيل خروج** (Log out). This deletes the stored tokens.
+
+---
+
+## 8. Security and privacy
+
+- Tokens and API keys are stored in `chrome.storage.local` on your machine. They are **not encrypted**, so don't use this on a shared computer profile.
+- The page text, element list and screenshots of the pages the agent works on are sent to the model provider (OpenAI for Codex).
+- Page content is treated as untrusted (prompt-injection defense in the system prompt). That lowers the risk but does not remove it. Don't point the agent at sites where one wrong click can spend money without a confirmation step.
+- The extension asks for broad permissions (`<all_urls>`, `debugger`, `tabs`, `scripting`) because it has to operate any site you choose.
+
+---
+
+## 9. Development
+
+```bash
+npm test          # 29 unit tests (node:test), no install needed
+npm install
+npm run e2e       # loads the extension in Chromium with mock models
+# If Playwright's Chromium is not installed:
+CHROMIUM_PATH=/path/to/chrome npm run e2e
+```
+
+Project layout:
+
+```
+manifest.json                      MV3 manifest (side panel, debugger, <all_urls>)
+src/background/service-worker.js   run coordination, panel messaging, login
+src/agent/agent.js                 observe → decide → act loop
+src/agent/tools.js                 tool schemas + implementations
+src/agent/prompt.js                system prompt and safety rules
+src/browser/controller.js          CDP input, scrolling, screenshots, tab handling
+src/browser/page-scripts.js        injected DOM snapshot / element actions
+src/providers/chatgpt-auth.js      Codex device-code OAuth, refresh, auth.json import
+src/providers/chatgpt.js           Responses API on chatgpt.com/backend-api/codex
+src/providers/openai-compatible.js Chat Completions (for future providers)
+src/fast/                          optional Jev fast layer
+src/sidepanel/                     UI (Arabic, RTL) + safe Markdown renderer
+test/                              unit tests + e2e/run-e2e.mjs
+```
+
+### Adding a provider (roadmap)
+
+Every provider is a session object with three methods. `agent.js` never needs to change:
+
+```js
+session.addUserMessage(text, images)          // images: data URLs
+session.addToolResult(callId, output, images)
+await session.next({ signal, onEvent, toolChoice }) // → { text, toolCalls: [{ id, name, args }], usage }
+```
+
+To add one:
+
+1. Implement the session in `src/providers/`.
+2. Create it in `createSession()` in `service-worker.js`.
+3. Add it to the provider list in settings and the panel.
+4. Add unit tests with a stubbed `fetch`, like `test/chatgpt.test.js`.
+
+---
+
+## Roadmap
+
+1. ✅ Codex / ChatGPT subscription: **current focus; validate on a real account first.**
+2. ⏳ Other providers: xAI Grok, Z.ai GLM (incl. Coding Plan), OpenAI API key, OpenRouter. The code path exists in `openai-compatible.js` but has not been tested against the real services yet.
+3. ⏳ Jev fast layer: tested end-to-end with a mock only.
