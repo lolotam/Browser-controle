@@ -1,0 +1,225 @@
+// Drives one browser tab through the Chrome DevTools Protocol (chrome.debugger)
+// so clicks and keystrokes are trusted input events, indistinguishable from a
+// real user's, and work on sites that ignore synthetic DOM events.
+
+import { snapshotPage, elementAction, pageText, pageReadyState, devicePixelRatioOf } from './page-scripts.js';
+
+const CDP_VERSION = '1.3';
+const RESTRICTED = /^(chrome|chrome-extension|edge|about|devtools|view-source):|^https:\/\/chrome(webstore)?\.google\.com\/webstore/;
+
+const KEYS = {
+  Enter: { code: 'Enter', keyCode: 13, text: '\r' },
+  Tab: { code: 'Tab', keyCode: 9 },
+  Escape: { code: 'Escape', keyCode: 27 },
+  Backspace: { code: 'Backspace', keyCode: 8 },
+  Delete: { code: 'Delete', keyCode: 46 },
+  Space: { key: ' ', code: 'Space', keyCode: 32, text: ' ' },
+  ArrowUp: { code: 'ArrowUp', keyCode: 38 },
+  ArrowDown: { code: 'ArrowDown', keyCode: 40 },
+  ArrowLeft: { code: 'ArrowLeft', keyCode: 37 },
+  ArrowRight: { code: 'ArrowRight', keyCode: 39 },
+  Home: { code: 'Home', keyCode: 36 },
+  End: { code: 'End', keyCode: 35 },
+  PageUp: { code: 'PageUp', keyCode: 33 },
+  PageDown: { code: 'PageDown', keyCode: 34 },
+};
+const MODIFIERS = { Alt: 1, Control: 2, Ctrl: 2, Meta: 4, Cmd: 4, Shift: 8 };
+
+export class BrowserController {
+  constructor() {
+    this.tabId = null;
+    this.attached = new Set();
+    chrome.debugger.onDetach.addListener(({ tabId }) => this.attached.delete(tabId));
+    chrome.tabs.onRemoved.addListener((tabId) => {
+      this.attached.delete(tabId);
+      if (tabId === this.tabId) this.tabId = null;
+    });
+  }
+
+  async currentTab() {
+    if (this.tabId !== null) {
+      try {
+        return await chrome.tabs.get(this.tabId);
+      } catch {
+        this.tabId = null;
+      }
+    }
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (!tab) throw new Error('No active tab found.');
+    this.tabId = tab.id;
+    return tab;
+  }
+
+  async useTab(tabId) {
+    const tab = await chrome.tabs.get(tabId);
+    await chrome.tabs.update(tabId, { active: true });
+    await chrome.windows.update(tab.windowId, { focused: true });
+    this.tabId = tabId;
+    return tab;
+  }
+
+  async cdp(method, params = {}) {
+    const tab = await this.currentTab();
+    assertControllable(tab.url);
+    if (!this.attached.has(tab.id)) {
+      try {
+        await chrome.debugger.attach({ tabId: tab.id }, CDP_VERSION);
+      } catch (err) {
+        if (!String(err.message).includes('already attached')) throw err;
+      }
+      this.attached.add(tab.id);
+    }
+    return chrome.debugger.sendCommand({ tabId: tab.id }, method, params);
+  }
+
+  async detachAll() {
+    for (const tabId of [...this.attached]) {
+      try {
+        await chrome.debugger.detach({ tabId });
+      } catch {
+        // Tab closed or already detached.
+      }
+    }
+    this.attached.clear();
+  }
+
+  async inject(func, args = []) {
+    const tab = await this.currentTab();
+    assertControllable(tab.url);
+    const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func, args });
+    return result?.result;
+  }
+
+  async snapshot({ maxElements = 250, maxTextChars = 3500 } = {}) {
+    return this.inject(snapshotPage, [maxElements, maxTextChars]);
+  }
+
+  async element(index, action, value = null) {
+    const result = await this.inject(elementAction, [index, action, value]);
+    if (result?.error) throw new Error(result.error);
+    return result;
+  }
+
+  async text(start, length) {
+    return this.inject(pageText, [start, length]);
+  }
+
+  async navigate(url) {
+    const tab = await this.currentTab();
+    await chrome.tabs.update(tab.id, { url });
+    await this.waitForLoad({ expectNavigation: true });
+  }
+
+  async history(direction) {
+    const tab = await this.currentTab();
+    if (direction === 'back') await chrome.tabs.goBack(tab.id);
+    else if (direction === 'forward') await chrome.tabs.goForward(tab.id);
+    else await chrome.tabs.reload(tab.id);
+    await this.waitForLoad({ expectNavigation: true });
+  }
+
+  async clickAt(x, y, { button = 'left', clickCount = 1 } = {}) {
+    await this.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+    for (let i = 1; i <= clickCount; i += 1) {
+      await this.cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button, clickCount: i });
+      await this.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button, clickCount: i });
+    }
+    await this.waitForLoad();
+  }
+
+  async hoverAt(x, y) {
+    await this.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+    await delay(300);
+  }
+
+  async insertText(text) {
+    await this.cdp('Input.insertText', { text });
+  }
+
+  /** Presses a key or chord such as "Enter", "Control+A" or "Shift+Tab". */
+  async pressKey(combo) {
+    const parts = combo.split('+').map((p) => p.trim()).filter(Boolean);
+    const keyName = parts.pop();
+    const modifiers = parts.reduce((mask, m) => mask | (MODIFIERS[m] ?? 0), 0);
+    const spec = KEYS[keyName] ?? {
+      code: keyName.length === 1 ? `Key${keyName.toUpperCase()}` : keyName,
+      keyCode: keyName.length === 1 ? keyName.toUpperCase().charCodeAt(0) : 0,
+      text: keyName.length === 1 && !(modifiers & ~MODIFIERS.Shift) ? keyName : undefined,
+    };
+    const base = {
+      key: spec.key ?? keyName,
+      code: spec.code,
+      windowsVirtualKeyCode: spec.keyCode,
+      nativeVirtualKeyCode: spec.keyCode,
+      modifiers,
+    };
+    await this.cdp('Input.dispatchKeyEvent', { ...base, type: spec.text ? 'keyDown' : 'rawKeyDown', text: spec.text });
+    await this.cdp('Input.dispatchKeyEvent', { ...base, type: 'keyUp' });
+    await this.waitForLoad();
+  }
+
+  /** Scrolls by a number of screens (negative = up) at a point, default viewport centre. */
+  async scroll(screens, at = null) {
+    const metrics = await this.cdp('Page.getLayoutMetrics');
+    const vp = metrics.cssVisualViewport ?? metrics.layoutViewport;
+    const x = at?.x ?? vp.clientWidth / 2;
+    const y = at?.y ?? vp.clientHeight / 2;
+    const deltaY = Math.round(vp.clientHeight * 0.85 * screens);
+    await this.cdp('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: 0, deltaY });
+    await delay(400);
+  }
+
+  /** JPEG screenshot of the viewport in CSS pixels, so coordinates match clickAt. */
+  async screenshot() {
+    const metrics = await this.cdp('Page.getLayoutMetrics');
+    const vp = metrics.cssVisualViewport ?? metrics.layoutViewport;
+    const dpr = (await this.inject(devicePixelRatioOf)) || 1;
+    const { data } = await this.cdp('Page.captureScreenshot', {
+      format: 'jpeg',
+      quality: 60,
+      clip: { x: vp.pageX, y: vp.pageY, width: vp.clientWidth, height: vp.clientHeight, scale: 1 / dpr },
+    });
+    return { dataUrl: `data:image/jpeg;base64,${data}`, width: Math.round(vp.clientWidth), height: Math.round(vp.clientHeight) };
+  }
+
+  async evaluate(expression) {
+    const { result, exceptionDetails } = await this.cdp('Runtime.evaluate', {
+      expression,
+      awaitPromise: true,
+      returnByValue: true,
+      userGesture: true,
+    });
+    if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text);
+    return result.value;
+  }
+
+  /** Waits for any navigation the last action triggered to finish loading. */
+  async waitForLoad({ expectNavigation = false, timeoutMs = 12000 } = {}) {
+    await delay(expectNavigation ? 400 : 250);
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const tab = await this.currentTab();
+      if (tab.status === 'complete') {
+        if (RESTRICTED.test(tab.url ?? '')) return;
+        try {
+          const state = await this.inject(pageReadyState);
+          if (state?.readyState === 'complete' || state?.readyState === 'interactive') break;
+        } catch {
+          // Page is mid-navigation; keep polling.
+        }
+      }
+      await delay(250);
+    }
+    await delay(300);
+  }
+}
+
+function assertControllable(url = '') {
+  if (RESTRICTED.test(url)) {
+    throw new Error(`Chrome does not allow extensions to control ${url.split('/').slice(0, 3).join('/')}. Navigate to a normal website first.`);
+  }
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Browser Agent</title>
+  <link rel="stylesheet" href="panel.css" />
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="dot" id="statusDot"></span>
+      <strong>Browser Agent</strong>
+      <span class="chip" id="modelChip">—</span>
+    </div>
+    <div class="actions">
+      <button class="icon" id="newChatBtn" title="محادثة جديدة">＋</button>
+      <button class="icon" id="settingsBtn" title="الإعدادات">⚙</button>
+    </div>
+  </header>
+
+  <main id="chatView">
+    <section id="messages" aria-live="polite">
+      <div class="empty" id="emptyState">
+        <h2>إيه المهمة؟</h2>
+        <p>اكتب أي حاجة عايز تتعمل في البراوزر: بحث، تجميع معلومات، ملء فورم، مقارنة أسعار… والوكيل هينفذ خطوة بخطوة ويديك تقرير نهائي.</p>
+        <ul class="examples">
+          <li>ابحث عن أرخص 3 لابتوبات RTX 4060 في أمازون مصر وقارن بينهم في جدول</li>
+          <li>افتح Hacker News ولخّص أهم 5 مواضيع النهارده مع الروابط</li>
+          <li>اقرأ الصفحة المفتوحة وطلّع منها كل الإيميلات وأرقام التليفون</li>
+        </ul>
+      </div>
+    </section>
+    <form id="composer">
+      <textarea id="input" rows="3" dir="auto" placeholder="اكتب المهمة… (Enter للإرسال، Shift+Enter لسطر جديد)"></textarea>
+      <div class="composer-row">
+        <span class="hint" id="hint"></span>
+        <button type="button" class="danger" id="stopBtn" hidden>إيقاف</button>
+        <button type="submit" class="primary" id="sendBtn">إرسال</button>
+      </div>
+    </form>
+  </main>
+
+  <section id="settingsView" hidden>
+    <h2>الإعدادات</h2>
+
+    <label class="field">
+      <span>مزوّد الذكاء</span>
+      <select id="provider">
+        <option value="chatgpt">اشتراك ChatGPT (Plus / Pro / Business)</option>
+        <option value="compatible">API متوافق مع OpenAI (Grok / GLM / غيرها)</option>
+      </select>
+    </label>
+
+    <div id="chatgptSection" class="card">
+      <div class="row between">
+        <span id="authStatus">غير متصل</span>
+        <button type="button" id="logoutBtn" hidden>تسجيل خروج</button>
+      </div>
+      <button type="button" class="primary" id="loginBtn">تسجيل الدخول بحساب ChatGPT</button>
+      <div id="deviceBox" class="device" hidden>
+        <p>افتح الصفحة اللي اتفتحت، سجّل دخول، واكتب الكود ده:</p>
+        <code id="deviceCode" dir="ltr"></code>
+        <div class="row">
+          <a id="deviceLink" target="_blank" rel="noopener">فتح صفحة التفعيل</a>
+          <button type="button" id="cancelLoginBtn">إلغاء</button>
+        </div>
+      </div>
+      <details>
+        <summary>بديل: استيراد auth.json من Codex CLI</summary>
+        <p class="muted">شغّل <code dir="ltr">codex login</code> على جهازك، وبعدين الصق محتوى <code dir="ltr">~/.codex/auth.json</code> هنا.</p>
+        <textarea id="authJson" rows="4" dir="ltr" placeholder='{"tokens": {...}}'></textarea>
+        <button type="button" id="importBtn">استيراد</button>
+      </details>
+    </div>
+
+    <div id="compatibleSection" class="card" hidden>
+      <label class="field">
+        <span>المزوّد</span>
+        <select id="preset"></select>
+      </label>
+      <label class="field">
+        <span>Base URL</span>
+        <input id="baseUrl" dir="ltr" />
+      </label>
+      <label class="field">
+        <span>API Key</span>
+        <input id="apiKey" type="password" dir="ltr" autocomplete="off" />
+      </label>
+    </div>
+
+    <div class="card">
+      <label class="field">
+        <span>الموديل</span>
+        <div class="row">
+          <select id="modelSelect"></select>
+          <button type="button" id="refreshModelsBtn" title="تحميل قائمة الموديلات">↻</button>
+        </div>
+        <input id="modelInput" dir="ltr" placeholder="أو اكتب اسم الموديل يدويًا" />
+        <small class="muted" id="modelInfo"></small>
+      </label>
+      <label class="field">
+        <span>مستوى التفكير (Reasoning effort)</span>
+        <select id="effort"></select>
+      </label>
+    </div>
+
+    <div class="card">
+      <label class="field">
+        <span>أقصى عدد خطوات للمهمة</span>
+        <input id="maxSteps" type="number" min="5" max="300" />
+      </label>
+      <label class="check"><input type="checkbox" id="vision" /> السماح بلقطات الشاشة (يحتاج موديل يدعم الصور)</label>
+      <label class="check"><input type="checkbox" id="allowJavascript" /> السماح للوكيل بتشغيل JavaScript في الصفحات (قوي لكن أخطر)</label>
+    </div>
+
+    <p class="error" id="settingsError" hidden></p>
+    <div class="row end">
+      <button type="button" id="closeSettingsBtn">رجوع</button>
+      <button type="button" class="primary" id="saveBtn">حفظ</button>
+    </div>
+  </section>
+
+  <script type="module" src="panel.js"></script>
+</body>
+</html>

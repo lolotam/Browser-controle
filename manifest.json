@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Browser Agent",
+  "short_name": "Browser Agent",
+  "version": "0.1.0",
+  "description": "AI agent that drives your browser: search, click, type, collect information and report back. Works with a ChatGPT subscription, xAI Grok, Z.ai GLM or any OpenAI-compatible API.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "unlimitedStorage",
+    "tabs",
+    "activeTab",
+    "scripting",
+    "debugger",
+    "webNavigation",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/index.html"
+  },
+  "action": {
+    "default_title": "Open Browser Agent"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Alt+Shift+A" }
+    }
+  }
+}

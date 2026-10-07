@@ -1,0 +1,14 @@
+{
+  "name": "browser-agent-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension: an AI agent that operates the browser using a ChatGPT subscription or an OpenAI-compatible API.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\"",
+    "e2e": "node test/e2e/run-e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.56.1"
+  }
+}
