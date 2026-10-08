@@ -29,6 +29,7 @@ export class SessionRunner {
     this.abort = null;
     this.pendingQuestion = null;
     this.saveTimer = null;
+    this.disposed = false;
     this.browser = new BrowserController({ title: meta.title || 'Browser Agent', color, isTakenByOther: (tab) => isTakenByOther(this.id, tab) });
     this.browser.groupId = body.groupId ?? null;
   }
@@ -134,6 +135,13 @@ export class SessionRunner {
     this.abort?.abort();
   }
 
+  /** For a deleted session: stop its task and never save again, or its last events would recreate it. */
+  dispose() {
+    this.disposed = true;
+    clearTimeout(this.saveTimer);
+    this.stop();
+  }
+
   askUser(question, signal) {
     return new Promise((resolve, reject) => {
       this.pendingQuestion = { question, resolve };
@@ -151,12 +159,14 @@ export class SessionRunner {
   }
 
   scheduleSave() {
+    if (this.disposed) return;
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => this.save(), SAVE_DELAY_MS);
   }
 
   async save() {
     clearTimeout(this.saveTimer);
+    if (this.disposed) return;
     await store.saveSession(this.id, { transcript: this.transcript, log: this.session?.log ?? this.storedLog, groupId: this.browser.groupId });
   }
 }

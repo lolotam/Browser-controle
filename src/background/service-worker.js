@@ -130,7 +130,7 @@ async function handleRequest(msg) {
       return (await store.listSessions()).map((meta) => ({ ...meta, running: Boolean(runners.get(meta.id)?.running) }));
     case 'session-create': {
       const meta = await store.createStoredSession();
-      await store.setWindowSession(msg.windowId, meta.id);
+      if (msg.windowId !== undefined) await store.setWindowSession(msg.windowId, meta.id);
       broadcastSessions();
       return meta;
     }
@@ -164,7 +164,7 @@ async function sessionForWindow(windowId) {
 async function deleteSession(id) {
   const runner = runners.get(id);
   if (runner) {
-    runner.stop();
+    runner.dispose();
     await runner.browser.detachAll();
     runners.delete(id);
   }

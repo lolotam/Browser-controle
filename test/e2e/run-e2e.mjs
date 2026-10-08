@@ -173,7 +173,8 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
     if (name === 'llm') {
       // Settings UI: switching to the compatible provider lists the mock server's models.
       // Settings open by themselves only while no model is saved, which depends on scenario order.
-      await panel.waitForSelector('#modelChip:not(:empty)');
+      // The preset list is filled by init(), so this waits until the form is ready.
+      await panel.waitForFunction(() => document.querySelectorAll('#preset option').length > 0);
       if (await panel.isHidden('#settingsView')) await panel.click('#settingsBtn');
       await panel.selectOption('#provider', 'compatible');
       await panel.selectOption('#preset', 'custom');
