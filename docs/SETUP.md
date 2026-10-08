@@ -96,7 +96,7 @@ After you connect, the model list loads automatically from your account (`/backe
    - **JavaScript**: leave this off unless you need precise data extraction. It gives the model full script access to pages.
 4. Click **حفظ** (Save). The chip in the header shows `ChatGPT · <model> · <effort>`.
 
-Leave **⚡ الطبقة السريعة (Jev)** off for now. It needs a separate TypeSafe API key and is covered in the Arabic overview ([README.ar.md](README.ar.md)).
+Leave **⚡ الطبقة السريعة** (fast layer) off for now. It needs its own API key, for TypeSafe Jev, OpenRouter, Vercel AI Gateway or an OpenAI-compatible server, and is covered in the Arabic overview ([README.ar.md](README.ar.md)).
 
 ---
 
@@ -168,7 +168,7 @@ src/browser/page-scripts.js        injected DOM snapshot / element actions
 src/providers/chatgpt-auth.js      Codex device-code OAuth, refresh, auth.json import
 src/providers/chatgpt.js           Responses API on chatgpt.com/backend-api/codex
 src/providers/openai-compatible.js Chat Completions (for future providers)
-src/fast/                          optional Jev fast layer
+src/fast/                          optional fast layer (Jev or a gateway chat model)
 src/sidepanel/                     UI (Arabic, RTL) + safe Markdown renderer
 test/                              unit tests + e2e/run-e2e.mjs
 ```

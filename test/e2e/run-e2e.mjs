@@ -80,8 +80,17 @@ function scriptedJev() {
   };
 }
 
+/** Mock chat-model fast layer: answers like scriptedJev, in the chat judge's JSON shape. */
+function scriptedJudge() {
+  const jev = scriptedJev();
+  return (body) => {
+    const { answers } = jev({ state: JSON.parse(body.messages.at(-1).content) });
+    return Object.fromEntries(Object.entries(answers).map(([k, a]) => [k, a.type === 'noul' ? a.noul : { probabilities: a.probabilities }]));
+  };
+}
+
 function startServer(handlers) {
-  const counts = { llm: 0, jev: 0 };
+  const counts = { llm: 0, jev: 0, judge: 0 };
   const server = http.createServer((req, res) => {
     let raw = '';
     req.on('data', (c) => { raw += c; });
@@ -92,8 +101,16 @@ function startServer(handlers) {
         } else if (req.url === '/v1/models') {
           res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ data: [{ id: 'mock-model' }] }));
         } else if (req.url === '/v1/chat/completions') {
+          const body = JSON.parse(raw);
+          if (body.response_format) {
+            counts.judge += 1;
+            if (req.headers.authorization !== 'Bearer judge-key') throw new Error('missing judge key');
+            const content = JSON.stringify(handlers.judge(body));
+            res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ model: 'mock-judge', choices: [{ message: { role: 'assistant', content } }] }));
+            return;
+          }
           counts.llm += 1;
-          const [name, args] = handlers.llm(JSON.parse(raw));
+          const [name, args] = handlers.llm(body);
           const id = `call_${counts.llm}`;
           const chunks = [
             { choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name, arguments: '' } }] } }] },
@@ -138,11 +155,11 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
       settings: {
         provider: 'compatible',
         compatible: { preset: 'custom', baseUrl: `${baseUrl}/v1`, apiKey: '', model: 'mock-model', effort: '' },
-        fast: fastConfig ? { ...fastConfig, baseUrl } : { enabled: false },
+        fast: fastConfig ?? { enabled: false },
         vision: true,
         maxSteps: 12,
       },
-    }), [base, fast]);
+    }), [base, fast?.(base)]);
     await panel.reload();
     await panel.click('#newChatBtn');
 
@@ -155,7 +172,7 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
     const final = await panel.waitForSelector('.msg.final', { timeout: 60000 });
     const report = await final.innerText();
     const steps = await panel.$$eval('.step', (rows) => rows.map((r) => `${r.classList.contains('fast') ? '⚡' : ' '} ${r.innerText.replace(/\s+/g, ' ')}`));
-    console.log(`\n== scenario: ${name} ==\n${steps.join('\n')}\n--- report ---\n${report}\n(LLM calls: ${counts.llm}, Jev calls: ${counts.jev})`);
+    console.log(`\n== scenario: ${name} ==\n${steps.join('\n')}\n--- report ---\n${report}\n(LLM calls: ${counts.llm}, Jev calls: ${counts.jev}, judge calls: ${counts.judge})`);
 
     const failures = [];
     const pageResult = await target.textContent('#out');
@@ -169,6 +186,15 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
     await panel.close();
     server.close();
   }
+}
+
+/** Shared by both fast scenarios: two fast steps, then exactly one LLM call for the report. */
+function fastChecks({ counts, steps, report }) {
+  return [
+    ...(counts.llm === 1 ? [] : [`expected 1 LLM call, got ${counts.llm}`]),
+    ...(steps.filter((s) => s.startsWith('⚡')).length === 2 ? [] : ['expected 2 fast steps']),
+    ...(report.includes('handover mentions fast steps: true') ? [] : ['LLM was not told about fast steps']),
+  ];
 }
 
 async function main() {
@@ -194,12 +220,19 @@ async function main() {
         name: 'fast',
         task: 'Search for "hello world" and press Go',
         handlers: { llm: reportingLlm(), jev: scriptedJev() },
-        fast: { enabled: true, mode: 'auto', apiKey: 'jev-key', model: 'jev-latest' },
+        fast: (base) => ({ enabled: true, mode: 'auto', provider: 'typesafe', apiKey: 'jev-key', model: 'jev-latest', baseUrl: base }),
         expectReport: 'Result: hello world / Red',
-        check: ({ counts, steps, report }) => [
-          ...(counts.llm === 1 ? [] : [`expected 1 LLM call, got ${counts.llm}`]),
-          ...(steps.filter((s) => s.startsWith('⚡')).length === 2 ? [] : ['expected 2 fast steps']),
-          ...(report.includes('handover mentions fast steps: true') ? [] : ['LLM was not told about fast steps']),
+        check: fastChecks,
+      })),
+      ...(await runScenario(context, extensionId, {
+        name: 'chat-fast',
+        task: 'Search for "hello world" and press Go',
+        handlers: { llm: reportingLlm(), judge: scriptedJudge() },
+        fast: (base) => ({ enabled: true, mode: 'auto', provider: 'custom', apiKey: 'judge-key', model: 'mock-judge', baseUrl: `${base}/v1`, minProb: 0.75 }),
+        expectReport: 'Result: hello world / Red',
+        check: (run) => [
+          ...fastChecks(run),
+          ...(run.counts.judge >= 2 && run.counts.jev === 0 ? [] : [`expected the chat judge, not Jev (judge ${run.counts.judge}, jev ${run.counts.jev})`]),
         ],
       })),
     ];

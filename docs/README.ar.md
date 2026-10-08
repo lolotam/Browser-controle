@@ -11,7 +11,7 @@
 | **Z.ai GLM** | API key (أو مفتاح GLM Coding Plan) | فيه preset لـ Coding Plan و preset للـ API العادي |
 | OpenAI API / OpenRouter / أي سيرفر متوافق | API key + Base URL | |
 
-## ⚡ الطبقة السريعة: Jev من TypeSafe (اختياري)
+## ⚡ الطبقة السريعة (اختياري)
 
 [Jev](https://typesafe.ai) موديل "System One": **ما بيكتبش نص خالص**. بيستقبل حالة الصفحة وأسئلة محددة، ويرجّع اختيارات بالاحتمالات في أقل من ثانية. علشان كده بنحطه **طبقة قبل الـ LLM**:
 
@@ -19,6 +19,17 @@
 2. **لو واثق والخطوة آمنة** → بتتنفذ فورًا من غير ما الـ LLM يتنادى (⚡ في الواجهة).
 3. **لو مش واثق، أو الخطوة حساسة، أو محتاجة كتابة نص جديد أو تحليل** → الخطوة بتروح للـ LLM، ومعاها ملخص اللي Jev عمله والاختيارات مترتبة بالاحتمالات، فالـ LLM يقرر أسرع.
 4. لما Jev يحس إن المهمة خلصت، الـ LLM بيتأكد ويكتب التقرير النهائي (Jev ما بيكتبش).
+
+**المزوّد:** من الإعدادات تختار مين يجاوب أسئلة الطبقة السريعة، وتحط الـ API key والموديل:
+
+| المزوّد | Base URL | الموديل الافتراضي | أقل ثقة للتنفيذ |
+|---|---|---|---|
+| TypeSafe Jev | `https://api.typesafe.ai` | `jev-latest` | 0.6 |
+| OpenRouter | `https://openrouter.ai/api/v1` | `anthropic/claude-haiku-5.5` | 0.75 |
+| Vercel AI Gateway | `https://ai-gateway.vercel.sh/v1` | `anthropic/claude-haiku-5.5` | 0.75 |
+| مخصص (متوافق مع OpenAI) | انت تحدده | انت تحدده | 0.75 |
+
+مع OpenRouter و Vercel والمخصص، موديل محادثة عادي بيجاوب نفس الأسئلة في طلب JSON واحد لكل خطوة. الاحتمالات هنا **تقدير الموديل نفسه** مش معايرة زي Jev، علشان كده أقل ثقة للتنفيذ 0.75 افتراضيًا. زرار ↻ جنب الموديل بيحمّل قائمة الموديلات من البوابة.
 
 **الوضعين:**
 - `auto`: تنفيذ تلقائي للخطوات الواثقة + اقتراحات.
@@ -30,8 +41,8 @@
 - بعد 8 خطوات سريعة ورا بعض، الـ LLM لازم يراجع.
 - لو Jev فشل 3 مرات، الطبقة بتقفل نفسها وبيكمل الـ LLM لوحده.
 - Jev متدرّب أساسًا على الإنجليزي (English-first)، فالمهام والمواقع العربية ممكن ثقته فيها تبقى أقل، وبالتالي تتحول للـ LLM أكتر.
-- لما الطبقة تبقى شغالة، نص الصفحة وقائمة عناصرها بيتبعتوا لـ TypeSafe، زي ما بيتبعتوا للـ LLM بالظبط.
-- محتاج TypeSafe API key من [console.typesafe.ai](https://console.typesafe.ai). التسجيل كان متوقف مؤقتًا بسبب الضغط في سبتمبر 2026.
+- لما الطبقة تبقى شغالة، نص الصفحة وقائمة عناصرها بيتبعتوا للمزوّد اللي اخترته (TypeSafe أو البوابة)، زي ما بيتبعتوا للـ LLM بالظبط.
+- Jev محتاج TypeSafe API key من [console.typesafe.ai](https://console.typesafe.ai). التسجيل كان متوقف مؤقتًا بسبب الضغط في سبتمبر 2026.
 
 ## التثبيت
 
@@ -79,6 +90,7 @@ src/
   providers/chatgpt.js           Responses API على backend Codex
   providers/openai-compatible.js Chat Completions (Grok / GLM / OpenAI / OpenRouter)
   fast/jev-client.js             TypeSafe System One API (POST /v1/systemone)
+  fast/chat-judge-client.js      نفس أسئلة Jev لأي موديل محادثة (OpenRouter / Vercel / متوافق)
   fast/fast-layer.js             أسئلة Jev + قواعد التنفيذ أو التحويل للـ LLM
   sidepanel/                     الواجهة (عربي RTL) + عارض Markdown آمن
 test/                            اختبارات unit (node:test) + اختبار E2E
@@ -90,6 +102,6 @@ test/                            اختبارات unit (node:test) + اختبا�
 cd browser-controle
 npm test          # اختبارات unit — مش محتاجة تثبيت
 npm install
-npm run e2e       # بيحمّل الإكستنشن في Chromium مع موديلات وهمية: سيناريو LLM كامل + سيناريو Jev السريع (LLM بيتنادى مرة واحدة بس)
+npm run e2e       # بيحمّل الإكستنشن في Chromium مع موديلات وهمية: سيناريو LLM كامل + سيناريو Jev السريع + سيناريو الطبقة السريعة بموديل محادثة (LLM بيتنادى مرة واحدة بس)
 # لو Chromium بتاع Playwright مش متثبت: CHROMIUM_PATH=/path/to/chrome npm run e2e
 ```
