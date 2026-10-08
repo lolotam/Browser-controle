@@ -13,6 +13,7 @@ const FALLBACK_EFFORTS = { chatgpt: ['low', 'medium', 'high', 'xhigh'], reasonin
 const ui = { running: false, question: null, liveText: null, liveReasoning: null, steps: new Map() };
 let settings = null;
 let presets = {};
+let fastPresets = {};
 let models = [];
 
 // ---------- chat ----------
@@ -194,7 +195,9 @@ async function init() {
   const data = await request('get-settings');
   settings = data.settings;
   presets = data.presets;
+  fastPresets = data.fastPresets;
   $('preset').innerHTML = Object.entries(presets).map(([id, p]) => `<option value="${id}">${p.label}</option>`).join('');
+  $('fastProvider').innerHTML = Object.entries(fastPresets).map(([id, p]) => `<option value="${id}">${p.label}</option>`).join('');
   fillForm();
   showAuth(await request('auth-status'));
   updateChip();
@@ -211,14 +214,7 @@ function fillForm() {
   $('vision').checked = settings.vision;
   $('allowJavascript').checked = settings.allowJavascript;
   $('modelInput').value = activeModel();
-  $('fastEnabled').checked = settings.fast.enabled;
-  $('fastMode').value = settings.fast.mode;
-  $('fastApiKey').value = settings.fast.apiKey;
-  $('fastModel').value = settings.fast.model;
-  $('fastBaseUrl').value = settings.fast.baseUrl;
-  $('fastMinProb').value = settings.fast.minProb;
-  $('fastRiskyMax').value = settings.fast.riskyMax;
-  syncFast();
+  fillFastForm(settings.fast);
   syncSections();
   renderEfforts(currentProviderSettings().effort);
 }
@@ -240,14 +236,30 @@ function readForm() {
   return next;
 }
 
+function fillFastForm(fast) {
+  $('fastEnabled').checked = fast.enabled;
+  $('fastProvider').value = fast.provider;
+  $('fastMode').value = fast.mode;
+  $('fastApiKey').value = fast.apiKey;
+  $('fastModel').value = fast.model;
+  $('fastBaseUrl').value = fast.baseUrl;
+  $('fastMinProb').value = fast.minProb;
+  $('fastRiskyMax').value = fast.riskyMax;
+  syncFast();
+  syncFastProvider();
+}
+
 function readFastForm() {
+  const provider = $('fastProvider').value;
+  const preset = fastPresets[provider] ?? {};
   return {
     enabled: $('fastEnabled').checked,
     mode: $('fastMode').value,
+    provider,
     apiKey: $('fastApiKey').value.trim(),
-    model: $('fastModel').value.trim() || 'jev-latest',
-    baseUrl: $('fastBaseUrl').value.trim() || 'https://api.typesafe.ai',
-    minProb: Number($('fastMinProb').value) || 0.6,
+    model: $('fastModel').value.trim() || preset.model,
+    baseUrl: $('fastBaseUrl').value.trim() || preset.baseUrl,
+    minProb: Number($('fastMinProb').value) || preset.minProb,
     riskyMax: Number($('fastRiskyMax').value) || 0.3,
   };
 }
@@ -256,12 +268,35 @@ function syncFast() {
   $('fastFields').hidden = !$('fastEnabled').checked;
 }
 
+// TypeSafe has no model list endpoint; every OpenAI-compatible provider does.
+function syncFastProvider() {
+  $('fastModelsBtn').hidden = $('fastProvider').value === 'typesafe';
+}
+
 $('fastEnabled').addEventListener('change', syncFast);
+$('fastProvider').addEventListener('change', () => {
+  const preset = fastPresets[$('fastProvider').value];
+  $('fastBaseUrl').value = preset.baseUrl;
+  $('fastModel').value = preset.model;
+  $('fastMinProb').value = preset.minProb;
+  $('fastModelList').innerHTML = '';
+  syncFastProvider();
+});
+$('fastModelsBtn').addEventListener('click', async () => {
+  $('fastTestResult').textContent = 'جاري تحميل الموديلات…';
+  try {
+    const list = await request('list-fast-models', { config: readFastForm() });
+    $('fastModelList').innerHTML = list.map((m) => `<option value="${escapeAttr(m.id)}"></option>`).join('');
+    $('fastTestResult').textContent = `${list.length} موديل متاح`;
+  } catch (err) {
+    $('fastTestResult').textContent = `✗ ${err.message}`;
+  }
+});
 $('fastTestBtn').addEventListener('click', async () => {
   $('fastTestResult').textContent = 'جاري الاختبار…';
   const started = performance.now();
   try {
-    const { model } = await request('jev-test', { config: readFastForm() });
+    const { model } = await request('fast-test', { config: readFastForm() });
     $('fastTestResult').textContent = `✓ شغال (${model}) في ${Math.round(performance.now() - started)}ms`;
   } catch (err) {
     $('fastTestResult').textContent = `✗ ${err.message}`;
@@ -285,14 +320,7 @@ function syncSections() {
 $('provider').addEventListener('change', () => {
   settings = readFormKeepingModel();
   $('modelInput').value = activeModel();
-  $('fastEnabled').checked = settings.fast.enabled;
-  $('fastMode').value = settings.fast.mode;
-  $('fastApiKey').value = settings.fast.apiKey;
-  $('fastModel').value = settings.fast.model;
-  $('fastBaseUrl').value = settings.fast.baseUrl;
-  $('fastMinProb').value = settings.fast.minProb;
-  $('fastRiskyMax').value = settings.fast.riskyMax;
-  syncFast();
+  fillFastForm(settings.fast);
   syncSections();
   models = [];
   renderModels();
@@ -405,7 +433,7 @@ $('saveBtn').addEventListener('click', async () => {
     return;
   }
   if (next.fast.enabled && !next.fast.apiKey) {
-    showSettingsError('الطبقة السريعة محتاجة TypeSafe API key.');
+    showSettingsError('الطبقة السريعة محتاجة API key.');
     return;
   }
   settings = await request('save-settings', { settings: next });

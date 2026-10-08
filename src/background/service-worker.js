@@ -5,9 +5,9 @@ import { runAgent } from '../agent/agent.js';
 import { buildSystemPrompt, describeTabContext } from '../agent/prompt.js';
 import { createToolExecutor, toolDefinitions } from '../agent/tools.js';
 import { BrowserController } from '../browser/controller.js';
-import { askJev } from '../fast/jev-client.js';
+import { fastClientFor } from '../fast/clients.js';
 import { createFastLayer } from '../fast/fast-layer.js';
-import { COMPATIBLE_PRESETS, loadSettings, saveSettings } from '../lib/settings.js';
+import { COMPATIBLE_PRESETS, FAST_PRESETS, loadSettings, saveSettings } from '../lib/settings.js';
 import * as chatgptAuth from '../providers/chatgpt-auth.js';
 import { ChatgptSession, listChatgptModels } from '../providers/chatgpt.js';
 import { CompatibleSession, listCompatibleModels } from '../providers/openai-compatible.js';
@@ -72,7 +72,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 async function handleRequest(msg) {
   switch (msg.type) {
     case 'get-settings':
-      return { settings: await loadSettings(), presets: COMPATIBLE_PRESETS };
+      return { settings: await loadSettings(), presets: COMPATIBLE_PRESETS, fastPresets: FAST_PRESETS };
     case 'save-settings':
       return saveSettings(msg.settings);
     case 'auth-status':
@@ -88,14 +88,17 @@ async function handleRequest(msg) {
     case 'auth-logout':
       await chatgptAuth.logout();
       return chatgptAuth.getAuthStatus();
-    case 'jev-test': {
-      const { answers, model } = await askJev({
+    case 'fast-test': {
+      const ask = fastClientFor(msg.config.provider);
+      const { answers, model } = await ask({
         ...msg.config,
         state: { message: 'Hello, can you hear me?' },
         questions: { greeting: { type: 'noul', instructions: 'The message is a greeting or a connection check.' } },
       });
       return { model, noul: answers.greeting?.noul ?? null };
     }
+    case 'list-fast-models':
+      return listCompatibleModels(msg.config.baseUrl, msg.config.apiKey);
     case 'list-models': {
       const settings = msg.settings ?? (await loadSettings());
       if (settings.provider === 'chatgpt') return listChatgptModels();
@@ -170,7 +173,7 @@ async function startRun(text) {
     const tab = await browser.currentTab().catch(() => null);
     const execute = createToolExecutor(browser, { askUser: (q) => askUser(q, abort.signal) });
     const fastLayer = settings.fast.enabled && settings.fast.apiKey
-      ? createFastLayer({ config: settings.fast, browser, execute, task: text })
+      ? createFastLayer({ config: settings.fast, browser, execute, task: text, ask: fastClientFor(settings.fast.provider) })
       : null;
     await runAgent({
       fastLayer,
