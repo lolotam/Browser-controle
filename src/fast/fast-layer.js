@@ -198,7 +198,7 @@ export function createFastLayer({ config, browser, execute, task, ask = askJev }
       } catch (err) {
         if (signal?.aborted) throw err;
         failures += 1;
-        return { kind: 'escalate', reason: `Jev unavailable: ${err.message}`, snapshot, hints: '' };
+        return { kind: 'escalate', reason: `Fast layer unavailable: ${err.message}`, snapshot, hints: '' };
       }
 
       const hints = formatHints(answers, snapshot);

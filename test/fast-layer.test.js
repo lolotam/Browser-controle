@@ -92,7 +92,7 @@ test('createFastLayer turns itself off after repeated Jev failures', async () =>
     config: { mode: 'auto' }, browser: { snapshot: async () => snapshot }, execute: async () => ({ output: '' }), task: 't',
     ask: async () => { throw new Error('HTTP 503'); },
   });
-  for (let i = 0; i < 3; i += 1) assert.match((await layer.step()).reason, /Jev unavailable/);
+  for (let i = 0; i < 3; i += 1) assert.match((await layer.step()).reason, /Fast layer unavailable/);
   assert.equal((await layer.step()).kind, 'off');
 });
 
