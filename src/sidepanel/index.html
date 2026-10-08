@@ -148,10 +148,10 @@
         <label class="field">
           <span data-i18n="model.label"></span>
           <div class="row">
-            <input id="fastModel" class="grow" dir="ltr" list="fastModelList" />
+            <select id="fastModelSelect" class="grow"></select>
             <button type="button" class="ghost icon" id="fastModelsBtn" data-i18n-title="model.refresh">↻</button>
           </div>
-          <datalist id="fastModelList"></datalist>
+          <input id="fastModel" dir="ltr" data-i18n-placeholder="model.manual" />
         </label>
         <label class="field"><span>Base URL</span><input id="fastBaseUrl" dir="ltr" /></label>
         <div class="row">

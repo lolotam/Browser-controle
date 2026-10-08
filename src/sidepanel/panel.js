@@ -16,6 +16,9 @@ let settings = null;
 let presets = {};
 let fastPresets = {};
 let models = [];
+let fastModels = [];
+const CUSTOM_MODEL = '__custom__';
+const loads = { main: 0, fast: 0 }; // newest request wins when lists load concurrently
 let authStatus = { connected: false };
 
 setLanguage(resolveLanguage('auto', chrome.i18n.getUILanguage()));
@@ -230,6 +233,7 @@ function applyLanguage(language) {
   showAuth(authStatus);
   updateChip();
   renderModels();
+  syncFastProvider();
   renderEfforts($('effort').value);
 }
 
@@ -242,6 +246,10 @@ function toggleSettings(open) {
   $('settingsView').hidden = !open;
   $('chatView').hidden = open;
   $('settingsError').hidden = true;
+  if (open) {
+    loadModels();
+    loadFastModels();
+  }
 }
 
 async function init() {
@@ -257,6 +265,7 @@ async function init() {
   updateChip();
   if (!activeModel()) toggleSettings(true);
   loadModels();
+  loadFastModels();
 }
 
 // Tokens land in storage even when the worker that polled for them was restarted
@@ -279,6 +288,7 @@ function fillForm() {
   $('vision').checked = settings.vision;
   $('allowJavascript').checked = settings.allowJavascript;
   $('modelInput').value = activeModel();
+  renderModels();
   fillFastForm(settings.fast);
   syncSections();
   renderEfforts(currentProviderSettings().effort);
@@ -335,7 +345,11 @@ function syncFast() {
 
 // TypeSafe has no model list endpoint; every OpenAI-compatible provider does.
 function syncFastProvider() {
-  $('fastModelsBtn').hidden = $('fastProvider').value === 'typesafe';
+  const listed = $('fastProvider').value !== 'typesafe';
+  $('fastModelsBtn').hidden = !listed;
+  $('fastModelSelect').hidden = !listed;
+  if (listed) renderPicker($('fastModelSelect'), $('fastModel'), fastModels);
+  else $('fastModel').hidden = false;
 }
 
 $('fastEnabled').addEventListener('change', syncFast);
@@ -344,19 +358,27 @@ $('fastProvider').addEventListener('change', () => {
   $('fastBaseUrl').value = preset.baseUrl;
   $('fastModel').value = preset.model;
   $('fastMinProb').value = preset.minProb;
-  $('fastModelList').innerHTML = '';
+  fastModels = [];
   syncFastProvider();
+  loadFastModels();
 });
-$('fastModelsBtn').addEventListener('click', async () => {
-  $('fastTestResult').textContent = t('model.loading');
+$('fastModelsBtn').addEventListener('click', () => loadFastModels(true));
+$('fastModelSelect').addEventListener('change', () => pickModel($('fastModelSelect'), $('fastModel')));
+
+async function loadFastModels(showErrors = false) {
+  const config = readFastForm();
+  if (!config.enabled || config.provider === 'typesafe') return;
+  const load = ++loads.fast;
   try {
-    const list = await request('list-fast-models', { config: readFastForm() });
-    $('fastModelList').innerHTML = list.map((m) => `<option value="${escapeAttr(m.id)}"></option>`).join('');
-    $('fastTestResult').textContent = t('model.count', { n: list.length });
+    const list = await request('list-fast-models', { config });
+    if (load !== loads.fast) return;
+    fastModels = list;
+    renderPicker($('fastModelSelect'), $('fastModel'), fastModels);
+    $('fastTestResult').textContent = '';
   } catch (err) {
-    $('fastTestResult').textContent = `✗ ${err.message}`;
+    if (load === loads.fast && showErrors) $('fastTestResult').textContent = `✗ ${err.message}`;
   }
-});
+}
 $('fastTestBtn').addEventListener('click', async () => {
   $('fastTestResult').textContent = t('fast.testing');
   const started = performance.now();
@@ -412,11 +434,14 @@ $('preset').addEventListener('change', () => {
   const preset = presets[$('preset').value];
   $('baseUrl').value = preset.baseUrl;
   $('modelInput').value = preset.model;
+  models = [];
+  renderModels();
   renderEfforts('');
+  loadModels();
 });
 
 $('modelSelect').addEventListener('change', () => {
-  $('modelInput').value = $('modelSelect').value;
+  pickModel($('modelSelect'), $('modelInput'));
   const model = models.find((m) => m.id === $('modelSelect').value);
   renderEfforts(model?.defaultEffort ?? '');
 });
@@ -426,25 +451,47 @@ $('refreshModelsBtn').addEventListener('click', () => loadModels(true));
 async function loadModels(showErrors = false) {
   const draft = readForm();
   if (draft.provider === 'chatgpt' && !(await request('auth-status')).connected) return;
+  const load = ++loads.main;
   $('modelInfo').textContent = t('model.loading');
   try {
-    models = await request('list-models', { settings: draft });
+    const list = await request('list-models', { settings: draft });
+    if (load !== loads.main) return;
+    models = list;
+    if (!$('modelInput').value && models[0]) $('modelInput').value = models[0].id;
     renderModels();
-    if (!$('modelInput').value && models[0]) {
-      $('modelInput').value = models[0].id;
-      renderEfforts(models[0].defaultEffort ?? '');
-    }
-    $('modelInfo').textContent = t('model.count', { n: models.length });
+    renderEfforts($('effort').value || (models.find((m) => m.id === $('modelInput').value)?.defaultEffort ?? ''));
+    $('modelInfo').textContent = '';
   } catch (err) {
-    $('modelInfo').textContent = showErrors ? err.message : t('model.fallback');
+    if (load === loads.main) $('modelInfo').textContent = showErrors ? err.message : t('model.fallback');
   }
 }
 
 function renderModels() {
-  const current = $('modelInput').value;
-  $('modelSelect').innerHTML = `<option value="">${escapeAttr(t('model.pick'))}</option>`
-    + models.map((m) => `<option value="${escapeAttr(m.id)}">${escapeAttr(m.name)}</option>`).join('');
-  if (models.some((m) => m.id === current)) $('modelSelect').value = current;
+  renderPicker($('modelSelect'), $('modelInput'), models);
+}
+
+/**
+ * One dropdown per model field. The id input is the saved value; it only shows
+ * for "Other model" or while no list is available, so the model is never shown twice.
+ */
+function renderPicker(select, input, list) {
+  const current = input.value.trim();
+  const option = (m) => `<option value="${escapeAttr(m.id)}">${escapeAttr(m.name ?? m.id)}</option>`;
+  const hidden = list.filter((m) => m.hidden);
+  select.innerHTML = `<option value="" disabled>${escapeAttr(list.length ? t('model.pickCount', { n: list.length }) : t('model.pick'))}</option>`
+    + list.filter((m) => !m.hidden).map(option).join('')
+    + (hidden.length ? `<optgroup label="${escapeAttr(t('model.hiddenGroup'))}">${hidden.map(option).join('')}</optgroup>` : '')
+    + `<option value="${CUSTOM_MODEL}">${escapeAttr(t('model.other'))}</option>`;
+  const known = list.some((m) => m.id === current);
+  select.value = known ? current : (current || !list.length ? CUSTOM_MODEL : '');
+  input.hidden = select.value !== CUSTOM_MODEL;
+}
+
+function pickModel(select, input) {
+  const custom = select.value === CUSTOM_MODEL;
+  if (!custom) input.value = select.value;
+  input.hidden = !custom;
+  if (custom) input.focus();
 }
 
 function renderEfforts(selected) {

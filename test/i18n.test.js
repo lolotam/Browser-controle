@@ -21,5 +21,5 @@ test('an explicit language wins; auto follows the browser and falls back to Engl
 });
 
 test('t fills placeholders', () => {
-  assert.equal(t('model.count', { n: 3 }), '3 models available');
+  assert.equal(t('model.pickCount', { n: 3 }), '— 3 models —');
 });
