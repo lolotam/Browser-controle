@@ -123,6 +123,15 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .session-rename { flex: 1; padding: 4px 6px; }
 body { position: relative; }
 
+/* Feedback box and the rating card after a task. */
+.feedback-menu { gap: 8px; }
+.feedback-menu textarea, .rate-card textarea { resize: vertical; }
+/* Stars always count 1→5 left to right, but sit at the start of the line in either direction. */
+.stars { display: flex; gap: 2px; direction: ltr; align-self: flex-start; }
+.star { border: none; background: transparent; padding: 0 2px; font-size: 22px; line-height: 1; color: var(--border-strong); cursor: pointer; }
+.star:hover, .star.on { color: #f5b301; }
+.msg.rate-card { border: 1px solid var(--border); border-radius: var(--radius-card); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+
 /* Failure notices stay until dismissed, so the user knows a backup is working. */
 .notices { display: flex; flex-direction: column; gap: 4px; padding: 0 10px; }
 .notices:not(:empty) { padding-top: 6px; }
