@@ -26,6 +26,7 @@ test('chat judge sends one JSON-mode completion and returns Jev-shaped answers',
   assert.equal(calls[0].url, 'https://gw.example/v1/chat/completions');
   assert.equal(calls[0].init.headers.Authorization, 'Bearer k1');
   assert.deepEqual(calls[0].body.response_format, { type: 'json_object' });
+  assert.equal(calls[0].body.temperature, undefined, 'claude-haiku-5.5 and gpt-6.x on the gateways do not accept temperature');
   assert.deepEqual(JSON.parse(calls[0].body.messages.at(-1).content), { GOAL: 'g' });
   assert.equal(model, 'served-model');
   assert.equal(answers.operation.choice, 'click');

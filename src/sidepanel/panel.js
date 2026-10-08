@@ -436,6 +436,10 @@ $('saveBtn').addEventListener('click', async () => {
     showSettingsError('الطبقة السريعة محتاجة API key.');
     return;
   }
+  if (next.fast.enabled && !next.fast.baseUrl) {
+    showSettingsError('الطبقة السريعة محتاجة Base URL.');
+    return;
+  }
   settings = await request('save-settings', { settings: next });
   updateChip();
   toggleSettings(false);

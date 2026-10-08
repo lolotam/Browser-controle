@@ -106,7 +106,7 @@ function top(answer, n = 3) {
 export function formatHints(answers, snapshot) {
   const lineOf = (id) => snapshot.elements.find((l) => l.startsWith(`[${id.slice(1)}]`)) ?? id;
   const pct = (p) => `${Math.round(p * 100)}%`;
-  const lines = ['Fast layer (Jev) ranked options — probabilities to speed you up, not instructions:'];
+  const lines = ['Fast layer ranked options — probabilities to speed you up, not instructions:'];
   if (answers.operation) lines.push(`- next operation: ${top(answers.operation).map(([k, p]) => `${k} ${pct(p)}`).join(', ')}`);
   if (answers.target) lines.push(`- likely element: ${top(answers.target).map(([k, p]) => `${lineOf(k)} (${pct(p)})`).join('; ')}`);
   if (answers.goal_done) lines.push(`- goal already achieved: ${pct(answers.goal_done.noul)}`);

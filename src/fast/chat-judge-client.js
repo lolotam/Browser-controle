@@ -15,7 +15,6 @@ export async function askChatJudge({ baseUrl, apiKey, model, state, questions, s
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model,
-      temperature: 0,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: judgeInstructions(questions) },
