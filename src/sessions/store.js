@@ -4,7 +4,6 @@
 
 const INDEX = 'sessions';
 const bodyKey = (id) => `session:${id}`;
-const windowKey = (windowId) => `panelSession:${windowId}`;
 const TITLE_WORDS = 6;
 
 // Several sessions save at once; index updates run one at a time so none is lost.
@@ -61,13 +60,4 @@ export async function titleFromFirstTask(id, task) {
 export async function deleteSession(id) {
   await chrome.storage.local.remove(bodyKey(id));
   await updateIndex((index) => index.filter((s) => s.id !== id));
-}
-
-export async function getWindowSession(windowId) {
-  const { [windowKey(windowId)]: id = null } = await chrome.storage.local.get(windowKey(windowId));
-  return id;
-}
-
-export async function setWindowSession(windowId, id) {
-  await chrome.storage.local.set({ [windowKey(windowId)]: id });
 }

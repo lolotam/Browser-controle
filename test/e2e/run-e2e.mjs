@@ -34,9 +34,11 @@ const find = (text, re) => {
 };
 
 /** Mock LLM for the "llm" scenario: drives the whole task itself. */
-function scriptedLlm() {
+/** With askFirst the run starts by asking the user, so it stays running until a test answers. */
+function scriptedLlm({ askFirst = false } = {}) {
   let sawImage = false;
   const steps = [
+    ...(askFirst ? [() => ['ask_user', { question: 'Shall I start?' }]] : []),
     () => ['read_page', {}],
     (last) => ['type_text', { index: Number(find(last, /\[(\d+)\] input[^\n]*placeholder="Search"/)), text: 'hello world' }],
     (last) => ['select_option', { index: Number(find(last, /\[(\d+)\] select/)), option: 'Blue' }],
@@ -247,7 +249,7 @@ function perTask(makeScript) {
   return (body) => {
     const first = body.messages.find((m) => m.role === 'user');
     const key = typeof first.content === 'string' ? first.content : JSON.stringify(first.content);
-    if (!scripts.has(key)) scripts.set(key, makeScript());
+    if (!scripts.has(key)) scripts.set(key, makeScript(key));
     return scripts.get(key)(body);
   };
 }
@@ -257,7 +259,7 @@ function perTask(makeScript) {
  * task, and each tab must end up in its own session's tab group.
  */
 async function runParallelScenario(context, extensionId) {
-  const { server, counts, base } = await startServer({ llm: perTask(scriptedLlm) });
+  const { server, counts, base } = await startServer({ llm: perTask((task) => scriptedLlm({ askFirst: task.includes('session A') })) });
   const pages = [];
   const pageErrors = [];
   try {
@@ -286,10 +288,18 @@ async function runParallelScenario(context, extensionId) {
     await targetA.bringToFront();
     await panelA.fill('#input', 'Fill the form and report the result (session A)');
     await panelA.click('#sendBtn');
-    await panelA.waitForSelector('.step', { timeout: 30000 }); // A has claimed tab A
+    // A has claimed tab A and now waits on its question, so it is running for as long as the test needs.
+    await panelA.waitForSelector('.msg.ask', { timeout: 30000 });
+    // While A runs, the other panel must list it (with its running dot) so another tab can open it.
+    await panelB.click('#sessionBtn');
+    const runningListedInB = await panelB.waitForSelector('.session-item .dot.running', { timeout: 5000 }).then(() => true, () => false);
+    await panelB.click('#sessionBtn');
     await targetB.bringToFront();
     await panelB.fill('#input', 'Fill the form and report the result (session B)');
     await panelB.click('#sendBtn');
+    await panelB.waitForSelector('.step', { timeout: 30000 }); // B has claimed tab B
+    await panelA.fill('#input', 'Yes, start');
+    await panelA.click('#sendBtn');
 
     const [reportA, reportB] = await Promise.all([panelA, panelB].map(async (panel) => (await panel.waitForSelector('.msg.final', { timeout: 90000 })).innerText()));
     const groups = await panelA.evaluate(async () => Object.fromEntries((await chrome.tabs.query({})).filter((t) => t.url.includes('/page')).map((t) => [new URL(t.url).search, t.groupId])));
@@ -302,6 +312,7 @@ async function runParallelScenario(context, extensionId) {
     }
     if (!(groups['?s=a'] >= 0 && groups['?s=b'] >= 0 && groups['?s=a'] !== groups['?s=b'])) failures.push(`each tab should be in its own session group, got ${JSON.stringify(groups)}`);
     if (sessions.result.filter((s) => /session [AB]\)?/.test(s.title) || s.title.startsWith('Fill the form')).length < 2) failures.push('both sessions should be listed with titles from their tasks');
+    if (!runningListedInB) failures.push('a running session was missing from the session list of the other panel');
     if (pageErrors.length) failures.push(`side panel errors: ${pageErrors.join(' | ')}`);
     return failures;
   } finally {

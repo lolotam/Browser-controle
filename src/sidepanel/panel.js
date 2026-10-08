@@ -24,12 +24,11 @@ setLanguage(resolveLanguage('auto', chrome.i18n.getUILanguage()));
 
 // ---------- chat ----------
 
-// Each window's panel shows one session; the port name tells the worker which.
+// The panel shows one session; the port name tells the worker which.
 // The worker can be stopped while the panel stays open, which closes the port,
 // so it reconnects lazily on the next message instead of looping on restarts.
 let port = null;
 let sessionId = null;
-let windowId = null;
 let sessionList = [];
 
 function connect() {
@@ -125,7 +124,7 @@ function onEvent(event) {
       refreshSessions();
       break;
     case 'session-missing':
-      request('window-session', { windowId }).then(openSession);
+      request('blank-session').then(openSession);
       break;
     case 'auth-error':
       $('deviceBox').hidden = true;
@@ -249,7 +248,7 @@ $('input').addEventListener('keydown', (e) => {
 });
 $('stopBtn').addEventListener('click', () => send({ type: 'stop' }));
 $('newChatBtn').addEventListener('click', async () => {
-  const meta = await request('session-create', { windowId });
+  const meta = await request('session-create');
   await openSession(meta.id);
 });
 document.querySelectorAll('.examples li').forEach((li) => li.addEventListener('click', () => {
@@ -260,8 +259,7 @@ document.querySelectorAll('.examples li').forEach((li) => li.addEventListener('c
 // ---------- sessions ----------
 
 async function startSessions() {
-  windowId = (await chrome.windows.getCurrent()).id;
-  sessionId = await request('window-session', { windowId });
+  sessionId = await request('blank-session');
   connect();
   await refreshSessions();
 }
@@ -276,7 +274,6 @@ async function openSession(id) {
   ui.running = false;
   clearMessages();
   $('emptyState').hidden = false;
-  await request('session-open', { windowId, id });
   connect();
   renderSessionTitle();
 }
@@ -297,7 +294,11 @@ function renderSessionTitle() {
 
 function renderSessionList() {
   const query = $('sessionSearch').value.trim().toLowerCase();
-  const shown = sessionList.filter((s) => !query || sessionLabel(s).toLowerCase().includes(query));
+  // Every open panel starts on an empty session; only the current one of those is worth listing.
+  // A running session is always listed, so another tab can open it.
+  const shown = sessionList
+    .filter((s) => s.titled || s.running || s.id === sessionId)
+    .filter((s) => !query || sessionLabel(s).toLowerCase().includes(query));
   $('sessionList').replaceChildren(...shown.map(sessionRow));
 }
 
@@ -368,7 +369,7 @@ function startRename(row, title, meta) {
 async function deleteSessionAsked(meta) {
   if (!window.confirm(t('session.confirmDelete', { title: sessionLabel(meta) }))) return;
   await request('session-delete', { id: meta.id });
-  if (meta.id === sessionId) await openSession(await request('window-session', { windowId }));
+  if (meta.id === sessionId) await openSession(await request('blank-session'));
   else await refreshSessions();
 }
 
@@ -447,9 +448,10 @@ async function init() {
   presets = data.presets;
   fastPresets = data.fastPresets;
   setLanguage(resolveLanguage(settings.uiLanguage, chrome.i18n.getUILanguage()));
-  $('fastProvider').innerHTML = Object.entries(fastPresets).map(([id, p]) => `<option value="${id}">${escapeAttr(p.label)}</option>`).join('');
-  $('fastFallbackProvider').innerHTML = Object.entries(fastPresets).filter(([, p]) => p.decision)
-    .map(([id, p]) => `<option value="${id}">${escapeAttr(p.label)}</option>`).join('');
+  // The fast layer and its backup offer the same decision providers.
+  const fastOptions = Object.entries(fastPresets).map(([id, p]) => `<option value="${id}">${escapeAttr(p.label)}</option>`).join('');
+  $('fastProvider').innerHTML = fastOptions;
+  $('fastFallbackProvider').innerHTML = fastOptions;
   fillForm();
   showAuth(await request('auth-status'));
   updateChip();
@@ -500,7 +502,15 @@ $('fallbackEnabled').addEventListener('change', () => {
   if ($('fallbackEnabled').checked) fallbackForm.loadModels();
 });
 
-function fillFastForm(fast) {
+/** A provider saved before the list was limited to decision providers falls back to TypeSafe. */
+function knownFastProvider(slot) {
+  if (fastPresets[slot.provider]) return slot;
+  const { baseUrl, model, minProb } = fastPresets.typesafe;
+  return { ...slot, provider: 'typesafe', baseUrl, model, ...(slot.minProb !== undefined ? { minProb } : {}) };
+}
+
+function fillFastForm(saved) {
+  const fast = { ...knownFastProvider(saved), fallback: knownFastProvider(saved.fallback) };
   $('fastEnabled').checked = fast.enabled;
   $('fastProvider').value = fast.provider;
   $('fastMode').value = fast.mode;
@@ -624,7 +634,7 @@ async function loadFastModels(showErrors = false) {
     if (load !== loads.fast) return;
     fastModels = list;
     syncFastProvider();
-    showFastStatus('', list.length ? '' : t('fast.noDecisionModels'));
+    showFastStatus('', '');
   } catch (err) {
     if (load === loads.fast && showErrors) showFastStatus('fail', `✗ ${err.message}`);
   }

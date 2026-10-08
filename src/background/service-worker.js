@@ -14,6 +14,10 @@ const GROUP_COLORS = ['cyan', 'blue', 'green', 'yellow', 'purple', 'pink', 'oran
 const runners = new Map(); // sessionId → SessionRunner
 const loading = new Map(); // sessionId → Promise<SessionRunner>
 const panels = new Set(); // every open panel port, for list updates and sign-in errors
+// Blank sessions handed to a panel that has not connected yet; two panels opening
+// at once must not both get the same one.
+const reserved = new Set();
+const RESERVATION_MS = 10000;
 let loginAbort = null;
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
@@ -72,6 +76,7 @@ chrome.runtime.onConnect.addListener((port) => {
   const [kind, sessionId] = port.name.split(':');
   if (kind !== 'panel' || !sessionId) return;
   panels.add(port);
+  reserved.delete(sessionId);
   port.onDisconnect.addListener(() => panels.delete(port));
   runnerFor(sessionId).then(
     (runner) => runner.attach(port),
@@ -130,13 +135,9 @@ async function handleRequest(msg) {
       return (await store.listSessions()).map((meta) => ({ ...meta, running: Boolean(runners.get(meta.id)?.running) }));
     case 'session-create': {
       const meta = await store.createStoredSession();
-      if (msg.windowId !== undefined) await store.setWindowSession(msg.windowId, meta.id);
       broadcastSessions();
       return meta;
     }
-    case 'session-open':
-      await store.setWindowSession(msg.windowId, msg.id);
-      return null;
     case 'session-rename':
       await store.renameSession(msg.id, msg.title);
       await runners.get(msg.id)?.rename(String(msg.title).trim());
@@ -144,20 +145,26 @@ async function handleRequest(msg) {
       return null;
     case 'session-delete':
       return deleteSession(msg.id);
-    case 'window-session':
-      return sessionForWindow(msg.windowId);
+    case 'blank-session':
+      return blankSession();
     default:
       throw new Error(`Unknown request ${msg.type}`);
   }
 }
 
-/** The session a window's panel shows: its last one, else the newest, else a new one. */
-async function sessionForWindow(windowId) {
-  const known = await store.getWindowSession(windowId);
-  const list = await store.listSessions();
-  if (known && list.some((s) => s.id === known)) return known;
-  const id = list[0]?.id ?? (await store.createStoredSession()).id;
-  await store.setWindowSession(windowId, id);
+/**
+ * A panel that opens starts on a fresh session; running sessions are one click
+ * away in the list. An empty session no panel shows is reused so opening the
+ * panel repeatedly does not pile up blank sessions.
+ */
+async function blankSession() {
+  const unused = (await store.listSessions()).find((s) => {
+    const runner = runners.get(s.id);
+    return !s.titled && !reserved.has(s.id) && !runner?.running && !runner?.ports.size;
+  });
+  const id = unused?.id ?? (await store.createStoredSession()).id;
+  reserved.add(id);
+  setTimeout(() => reserved.delete(id), RESERVATION_MS);
   return id;
 }
 

@@ -25,11 +25,11 @@
 | المزوّد | Base URL | الموديل الافتراضي | أقل ثقة للتنفيذ |
 |---|---|---|---|
 | TypeSafe Jev | `https://api.typesafe.ai` | `jev-latest` | 0.6 |
-| OpenRouter | `https://openrouter.ai/api/v1` | `anthropic/claude-haiku-5.5` | 0.75 |
-| Vercel AI Gateway | `https://ai-gateway.vercel.sh/v1` | `anthropic/claude-haiku-5.5` | 0.75 |
-| مخصص (متوافق مع OpenAI) | انت تحدده | انت تحدده | 0.75 |
+| Vercel AI Gateway | `https://ai-gateway.vercel.sh/v1` | `typesafe-ai/jev` | 0.6 |
 
-مع OpenRouter و Vercel والمخصص، موديل محادثة عادي بيجاوب نفس الأسئلة في طلب JSON واحد لكل خطوة. الاحتمالات هنا **تقدير الموديل نفسه** مش معايرة زي Jev، علشان كده أقل ثقة للتنفيذ 0.75 افتراضيًا. زرار ↻ جنب الموديل بيحمّل قائمة الموديلات من البوابة.
+القايمتين (الأساسي والاحتياطي) فيهم نفس المزوّدين دول بس، لأنهم الوحيدين اللي عندهم Jev. OpenRouter ما عندوش Jev في الـ API بتاعه (عنده `typesafe/jev-router` بس، وده موديل محادثة بيوجّه للموديلات التانية). قايمة Vercel بتعرض الـ decision models بس، وزرار ↻ بيحدّثها.
+
+لو كتبت في Vercel اسم موديل محادثة عادي من "موديل آخر"، بيتسأل نفس الأسئلة في طلب JSON واحد لكل خطوة، واحتمالاته بتبقى **تقدير الموديل نفسه** مش معايرة زي Jev، فارفع "أقل ثقة للتنفيذ" لـ 0.75.
 
 **الوضعين:**
 - `auto`: تنفيذ تلقائي للخطوات الواثقة + اقتراحات.
@@ -108,7 +108,8 @@ src/
   providers/chatgpt.js           Responses API على backend Codex
   providers/openai-compatible.js Chat Completions (Grok / GLM / OpenAI / OpenRouter)
   fast/jev-client.js             TypeSafe System One API (POST /v1/systemone)
-  fast/chat-judge-client.js      نفس أسئلة Jev لأي موديل محادثة (OpenRouter / Vercel / متوافق)
+  fast/gateway-decision-client.js Jev عن طريق Vercel (POST /v4/ai/decision-model)
+  fast/chat-judge-client.js      نفس أسئلة Jev لموديل محادثة (لو اسم الموديل مش decision model)
   fast/fast-layer.js             أسئلة Jev + قواعد التنفيذ أو التحويل للـ LLM
   sidepanel/                     الواجهة (عربي RTL / إنجليزي LTR، فاتح أو داكن حسب النظام) + عارض Markdown آمن
 test/                            اختبارات unit (node:test) + اختبار E2E
