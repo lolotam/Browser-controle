@@ -71,9 +71,9 @@ export class SessionRunner {
     const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo(), KEEP_ALIVE_MS);
     this.emit({ type: 'user', text });
     this.emit({ type: 'status', running: true });
-    this.onSessionsChanged();
     try {
       if (!this.titled) await this.nameAfter(text);
+      this.onSessionsChanged(); // after naming, so other panels list it with its title
       const settings = await loadSettings();
       this.prepareModelSession(settings);
       this.browser.tabId = null; // each task starts on the tab the user is looking at

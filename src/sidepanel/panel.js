@@ -295,8 +295,9 @@ function renderSessionTitle() {
 function renderSessionList() {
   const query = $('sessionSearch').value.trim().toLowerCase();
   // Every open panel starts on an empty session; only the current one of those is worth listing.
+  // A running session is always listed, so another tab can open it.
   const shown = sessionList
-    .filter((s) => s.titled || s.id === sessionId)
+    .filter((s) => s.titled || s.running || s.id === sessionId)
     .filter((s) => !query || sessionLabel(s).toLowerCase().includes(query));
   $('sessionList').replaceChildren(...shown.map(sessionRow));
 }

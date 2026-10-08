@@ -287,6 +287,10 @@ async function runParallelScenario(context, extensionId) {
     await panelA.fill('#input', 'Fill the form and report the result (session A)');
     await panelA.click('#sendBtn');
     await panelA.waitForSelector('.step', { timeout: 30000 }); // A has claimed tab A
+    // While A runs, the other panel must list it (with its running dot) so another tab can open it.
+    await panelB.click('#sessionBtn');
+    const runningListedInB = await panelB.waitForSelector('.session-item .dot.running', { timeout: 5000 }).then(() => true, () => false);
+    await panelB.click('#sessionBtn');
     await targetB.bringToFront();
     await panelB.fill('#input', 'Fill the form and report the result (session B)');
     await panelB.click('#sendBtn');
@@ -302,6 +306,7 @@ async function runParallelScenario(context, extensionId) {
     }
     if (!(groups['?s=a'] >= 0 && groups['?s=b'] >= 0 && groups['?s=a'] !== groups['?s=b'])) failures.push(`each tab should be in its own session group, got ${JSON.stringify(groups)}`);
     if (sessions.result.filter((s) => /session [AB]\)?/.test(s.title) || s.title.startsWith('Fill the form')).length < 2) failures.push('both sessions should be listed with titles from their tasks');
+    if (!runningListedInB) failures.push('a running session was missing from the session list of the other panel');
     if (pageErrors.length) failures.push(`side panel errors: ${pageErrors.join(' | ')}`);
     return failures;
   } finally {

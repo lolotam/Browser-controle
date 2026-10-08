@@ -14,6 +14,10 @@ const GROUP_COLORS = ['cyan', 'blue', 'green', 'yellow', 'purple', 'pink', 'oran
 const runners = new Map(); // sessionId → SessionRunner
 const loading = new Map(); // sessionId → Promise<SessionRunner>
 const panels = new Set(); // every open panel port, for list updates and sign-in errors
+// Blank sessions handed to a panel that has not connected yet; two panels opening
+// at once must not both get the same one.
+const reserved = new Set();
+const RESERVATION_MS = 10000;
 let loginAbort = null;
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
@@ -72,6 +76,7 @@ chrome.runtime.onConnect.addListener((port) => {
   const [kind, sessionId] = port.name.split(':');
   if (kind !== 'panel' || !sessionId) return;
   panels.add(port);
+  reserved.delete(sessionId);
   port.onDisconnect.addListener(() => panels.delete(port));
   runnerFor(sessionId).then(
     (runner) => runner.attach(port),
@@ -155,9 +160,12 @@ async function handleRequest(msg) {
 async function blankSession() {
   const unused = (await store.listSessions()).find((s) => {
     const runner = runners.get(s.id);
-    return !s.titled && !runner?.running && !runner?.ports.size;
+    return !s.titled && !reserved.has(s.id) && !runner?.running && !runner?.ports.size;
   });
-  return unused?.id ?? (await store.createStoredSession()).id;
+  const id = unused?.id ?? (await store.createStoredSession()).id;
+  reserved.add(id);
+  setTimeout(() => reserved.delete(id), RESERVATION_MS);
+  return id;
 }
 
 async function deleteSession(id) {
