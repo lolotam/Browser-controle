@@ -4,6 +4,7 @@ import { bindSearch, escapeAttr, pickModel, renderPicker } from './model-picker.
 import { createKeyStore } from './key-store.js';
 import { createProviderForm } from './provider-form.js';
 import { FEEDBACK_FORM_ID, afterDismissal, afterRating, sendFeedback, shouldAskForRating } from '../lib/feedback.js';
+import { googleAccount, signInWithGoogle, signOutOfGoogle } from '../lib/google-account.js';
 
 const $ = (id) => document.getElementById(id);
 const request = async (type, payload = {}) => {
@@ -440,6 +441,55 @@ document.addEventListener('click', (e) => {
   if (!$('sessionMenu').hidden && !$('sessionMenu').contains(e.target) && !$('sessionBtn').contains(e.target)) closeSessionMenu();
 });
 
+// ---------- Google account ----------
+
+let account = null;
+
+function renderAccount() {
+  $('accountAvatar').hidden = !account?.picture;
+  $('accountIcon').style.display = account?.picture ? 'none' : ''; // SVG elements have no hidden property
+  $('accountSignedOut').hidden = Boolean(account);
+  $('accountSignedIn').hidden = !account;
+  if (!account) return;
+  $('accountMenuAvatar').src = account.picture;
+  $('accountAvatar').src = account.picture;
+  $('accountName').textContent = account.name;
+  $('accountEmail').textContent = account.email;
+  $('accountBtn').title = `${account.name} — ${account.email}`;
+}
+
+function toggleAccountMenu() {
+  const opening = $('accountMenu').hidden;
+  closeSessionMenu();
+  $('feedbackMenu').hidden = true;
+  $('accountMenu').hidden = !opening;
+  $('accountStatus').textContent = '';
+}
+
+$('accountBtn').addEventListener('click', toggleAccountMenu);
+$('googleSignInBtn').addEventListener('click', async () => {
+  $('accountStatus').textContent = t('account.signingIn');
+  try {
+    account = await signInWithGoogle();
+    $('accountStatus').textContent = '';
+    renderAccount();
+  } catch (err) {
+    $('accountStatus').textContent = `✗ ${err.message}`;
+  }
+});
+$('googleSignOutBtn').addEventListener('click', async () => {
+  await signOutOfGoogle();
+  account = null;
+  renderAccount();
+});
+document.addEventListener('click', (e) => {
+  if (!$('accountMenu').hidden && !$('accountMenu').contains(e.target) && !$('accountBtn').contains(e.target)) $('accountMenu').hidden = true;
+});
+googleAccount().then((saved) => {
+  account = saved;
+  renderAccount();
+});
+
 // ---------- feedback and ratings ----------
 
 const STORE_REVIEWS_URL = `https://chromewebstore.google.com/detail/${chrome.runtime.id}/reviews`;
@@ -478,8 +528,9 @@ function starRow(onPick) {
   return row;
 }
 
+/** A signed-in user's feedback carries their Google email unless they typed another. */
 function feedbackFields(message, rating, email = '') {
-  return { message, rating, email, version: chrome.runtime.getManifest().version, language: currentLanguage() };
+  return { message, rating, email: email || account?.email || '', version: chrome.runtime.getManifest().version, language: currentLanguage() };
 }
 
 async function askForRating() {
@@ -547,11 +598,13 @@ async function submitFeedback({ message, rating, email = '' }, status, onSent) {
 function toggleFeedbackMenu() {
   const opening = $('feedbackMenu').hidden;
   closeSessionMenu();
+  $('accountMenu').hidden = true;
   $('feedbackMenu').hidden = !opening;
   if (!opening) return;
   feedbackRating = 0;
   $('feedbackStars').replaceWith(Object.assign(starRow((n) => { feedbackRating = n; }), { id: 'feedbackStars' }));
   $('feedbackStatus').textContent = '';
+  if (account && !$('feedbackEmail').value) $('feedbackEmail').value = account.email;
   $('feedbackText').focus();
 }
 
