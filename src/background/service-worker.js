@@ -98,7 +98,7 @@ async function handleRequest(msg) {
     }
     case 'list-models': {
       const settings = msg.settings ?? (await loadSettings());
-      if (settings.provider === 'chatgpt') return listChatgptModels(settings.chatgpt.clientVersion);
+      if (settings.provider === 'chatgpt') return listChatgptModels();
       return listCompatibleModels(settings.compatible.baseUrl, settings.compatible.apiKey);
     }
     default:
@@ -112,7 +112,10 @@ async function startLogin() {
   const controller = new AbortController();
   state.loginAbort = controller;
   await chrome.tabs.create({ url: device.verificationUrl, active: true });
-  chatgptAuth.completeDeviceLogin(device, controller.signal).then(
+  // fetch/setTimeout polling does not count as activity; without this the worker
+  // is killed ~30s in while the user signs in, and the poll silently dies.
+  const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo(), 20000);
+  chatgptAuth.completeDeviceLogin(device, controller.signal).finally(() => clearInterval(keepAlive)).then(
     async () => {
       const status = await chatgptAuth.getAuthStatus();
       for (const port of ports) port.postMessage({ type: 'auth-changed', status });
