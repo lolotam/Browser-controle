@@ -5,6 +5,8 @@ import { readSse } from '../lib/sse.js';
 
 const KEEP_FULL_OBSERVATIONS = 2;
 const TRIMMED_OBSERVATION_CHARS = 400;
+// Gateways such as Vercel's list image, video and embedding models next to chat models.
+const NON_CHAT_TYPES = new Set(['embedding', 'image', 'video', 'reranking', 'speech', 'transcription', 'realtime', 'evaluation']);
 
 export async function listCompatibleModels(baseUrl, apiKey) {
   const res = await fetch(`${trimSlash(baseUrl)}/models`, {
@@ -13,7 +15,9 @@ export async function listCompatibleModels(baseUrl, apiKey) {
   });
   if (!res.ok) throw new Error(`Could not load models (HTTP ${res.status}). Type the model id manually.`);
   const body = await res.json();
-  return (body.data ?? body.models ?? []).map((m) => ({ id: m.id ?? m.name, name: m.id ?? m.name, efforts: [] }));
+  return (body.data ?? body.models ?? [])
+    .filter((m) => !NON_CHAT_TYPES.has(m.type))
+    .map((m) => ({ id: m.id ?? m.name, name: m.id ?? m.name, efforts: [] }));
 }
 
 export class CompatibleSession {

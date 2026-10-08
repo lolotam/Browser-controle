@@ -9,11 +9,18 @@ export const COMPATIBLE_PRESETS = {
   custom: { label: 'Custom (OpenAI-compatible)', baseUrl: 'http://localhost:11434/v1', model: '', thinkingStyle: 'reasoning_effort' },
 };
 
+export const FAST_PRESETS = {
+  typesafe: { label: 'TypeSafe Jev', baseUrl: 'https://api.typesafe.ai', model: 'jev-latest', minProb: 0.6 },
+  openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-haiku-5.5', minProb: 0.75 },
+  vercel: { label: 'Vercel AI Gateway', baseUrl: 'https://ai-gateway.vercel.sh/v1', model: 'anthropic/claude-haiku-5.5', minProb: 0.75 },
+  custom: { label: 'Custom (OpenAI-compatible)', baseUrl: '', model: '', minProb: 0.75 },
+};
+
 export const DEFAULT_SETTINGS = {
   provider: 'chatgpt',
   chatgpt: { model: '', effort: '' },
   compatible: { preset: 'xai', baseUrl: COMPATIBLE_PRESETS.xai.baseUrl, apiKey: '', model: COMPATIBLE_PRESETS.xai.model, effort: '' },
-  fast: { enabled: false, mode: 'auto', baseUrl: 'https://api.typesafe.ai', apiKey: '', model: 'jev-latest', minProb: 0.6, riskyMax: 0.3 },
+  fast: { enabled: false, mode: 'auto', provider: 'typesafe', baseUrl: 'https://api.typesafe.ai', apiKey: '', model: 'jev-latest', minProb: 0.6, riskyMax: 0.3 },
   maxSteps: 40,
   vision: true,
   allowJavascript: false,

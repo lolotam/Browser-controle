@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { parseSseChunk } from '../src/lib/sse.js';
 import { chatgptIdentity } from '../src/lib/jwt.js';
 import { compactInput, parseOutput, withoutId } from '../src/providers/chatgpt.js';
-import { CompatibleSession, compactMessages, createAccumulator } from '../src/providers/openai-compatible.js';
+import { CompatibleSession, compactMessages, createAccumulator, listCompatibleModels } from '../src/providers/openai-compatible.js';
+import { mergeSettings } from '../src/lib/settings.js';
 
 const fakeJwt = (claims) => `h.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.s`;
 
@@ -88,4 +89,20 @@ test('CompatibleSession maps effort to GLM thinking or reasoning_effort', () => 
   assert.equal(grok.reasoning_effort, 'high');
   const plain = new CompatibleSession({ ...base, effort: '', thinkingStyle: 'reasoning_effort' }).requestBody('auto');
   assert.equal('reasoning_effort' in plain, false);
+});
+
+test('fast settings saved before providers existed keep using TypeSafe Jev', () => {
+  const { fast } = mergeSettings({ fast: { enabled: true, apiKey: 'jev', baseUrl: 'https://api.typesafe.ai' } });
+  assert.equal(fast.provider, 'typesafe');
+});
+
+test('model lists skip image, video and embedding models from gateways', async () => {
+  globalThis.fetch = async () => Response.json({ data: [
+    { id: 'anthropic/claude-haiku-5.5', type: 'language' },
+    { id: 'openai/text-embedding-3', type: 'embedding' },
+    { id: 'google/veo', type: 'video' },
+    { id: 'local-model' },
+  ] });
+  const models = await listCompatibleModels('https://gw.example/v1', 'k');
+  assert.deepEqual(models.map((m) => m.id), ['anthropic/claude-haiku-5.5', 'local-model']);
 });
