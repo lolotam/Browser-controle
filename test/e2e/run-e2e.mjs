@@ -90,8 +90,22 @@ function scriptedJudge() {
   };
 }
 
+/** Mock Vercel decision API: answers like scriptedJev, in the gateway's answer shape. */
+function scriptedGatewayJev() {
+  const jev = scriptedJev();
+  return (body) => {
+    const { answers } = jev({ state: body.state });
+    return {
+      model: 'typesafe-ai/jev',
+      answers: Object.fromEntries(Object.entries(answers).map(([k, a]) => [k, a.type === 'noul'
+        ? { type: 'boolean', probability: a.noul }
+        : { type: 'choice', choice: a.choice, probabilities: a.probabilities }])),
+    };
+  };
+}
+
 function startServer(handlers) {
-  const counts = { llm: 0, jev: 0, judge: 0 };
+  const counts = { llm: 0, jev: 0, judge: 0, decision: 0 };
   const server = http.createServer((req, res) => {
     let raw = '';
     req.on('data', (c) => { raw += c; });
@@ -120,6 +134,12 @@ function startServer(handlers) {
           res.writeHead(200, { 'Content-Type': 'text/event-stream' });
           for (const c of chunks) res.write(`data: ${JSON.stringify(c)}\n\n`);
           res.end('data: [DONE]\n\n');
+        } else if (req.url === '/v4/ai/decision-model') {
+          counts.decision += 1;
+          if (req.headers.authorization !== 'Bearer vercel-key' || req.headers['ai-model-id'] !== 'typesafe-ai/jev') throw new Error('bad decision request headers');
+          const body = JSON.parse(raw);
+          if (Object.values(body.questions).some((q) => q.type === 'noul')) throw new Error('noul must be sent as boolean');
+          res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(handlers.decision(body)));
         } else if (req.url === '/v1/systemone') {
           counts.jev += 1;
           if (req.headers.authorization !== 'Bearer jev-key') throw new Error('missing Jev key');
@@ -177,7 +197,7 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
       await panel.screenshot({ path: path.join(process.env.E2E_SCREENSHOTS, `${name}-${process.env.E2E_COLOR_SCHEME ?? 'light'}.png`) });
     }
     const steps = await panel.$$eval('.step', (rows) => rows.map((r) => `${r.classList.contains('fast') ? '⚡' : ' '} ${r.innerText.replace(/\s+/g, ' ')}`));
-    console.log(`\n== scenario: ${name} ==\n${steps.join('\n')}\n--- report ---\n${report}\n(LLM calls: ${counts.llm}, Jev calls: ${counts.jev}, judge calls: ${counts.judge})`);
+    console.log(`\n== scenario: ${name} ==\n${steps.join('\n')}\n--- report ---\n${report}\n(LLM calls: ${counts.llm}, Jev calls: ${counts.jev}, judge calls: ${counts.judge}, decision calls: ${counts.decision})`);
 
     const failures = [];
     const pageResult = await target.textContent('#out');
@@ -231,6 +251,17 @@ async function main() {
         fast: (base) => ({ enabled: true, mode: 'auto', provider: 'typesafe', apiKey: 'jev-key', model: 'jev-latest', baseUrl: base }),
         expectReport: 'Result: hello world / Red',
         check: fastChecks,
+      })),
+      ...(await runScenario(context, extensionId, {
+        name: 'vercel-jev',
+        task: 'Search for "hello world" and press Go',
+        handlers: { llm: reportingLlm(), decision: scriptedGatewayJev() },
+        fast: (base) => ({ enabled: true, mode: 'auto', provider: 'vercel', decision: true, apiKey: 'vercel-key', model: 'typesafe-ai/jev', baseUrl: `${base}/v1`, minProb: 0.6 }),
+        expectReport: 'Result: hello world / Red',
+        check: (run) => [
+          ...fastChecks(run),
+          ...(run.counts.decision >= 2 && run.counts.judge === 0 ? [] : [`expected the decision API (decision ${run.counts.decision}, judge ${run.counts.judge})`]),
+        ],
       })),
       ...(await runScenario(context, extensionId, {
         name: 'chat-fast',

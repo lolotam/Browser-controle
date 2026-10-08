@@ -96,13 +96,18 @@ test('fast settings saved before providers existed keep using TypeSafe Jev', () 
   assert.equal(fast.provider, 'typesafe');
 });
 
-test('model lists skip image, video and embedding models from gateways', async () => {
+test('model lists skip image, video and embedding models and flag decision models', async () => {
   globalThis.fetch = async () => Response.json({ data: [
     { id: 'anthropic/claude-haiku-5.5', type: 'language' },
     { id: 'openai/text-embedding-3', type: 'embedding' },
     { id: 'google/veo', type: 'video' },
+    { id: 'typesafe-ai/jev', type: 'evaluation' },
     { id: 'local-model' },
   ] });
   const models = await listCompatibleModels('https://gw.example/v1', 'k');
-  assert.deepEqual(models.map((m) => m.id), ['anthropic/claude-haiku-5.5', 'local-model']);
+  assert.deepEqual(models.map((m) => [m.id, m.decision]), [
+    ['anthropic/claude-haiku-5.5', false],
+    ['typesafe-ai/jev', true],
+    ['local-model', false],
+  ]);
 });

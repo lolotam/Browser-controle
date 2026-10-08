@@ -10,10 +10,10 @@ export const COMPATIBLE_PRESETS = {
 };
 
 export const FAST_PRESETS = {
-  typesafe: { label: 'TypeSafe Jev', baseUrl: 'https://api.typesafe.ai', model: 'jev-latest', minProb: 0.6 },
-  openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-haiku-5.5', minProb: 0.75 },
-  vercel: { label: 'Vercel AI Gateway', baseUrl: 'https://ai-gateway.vercel.sh/v1', model: 'anthropic/claude-haiku-5.5', minProb: 0.75 },
-  custom: { label: 'Custom (OpenAI-compatible)', baseUrl: '', model: '', minProb: 0.75 },
+  typesafe: { label: 'TypeSafe Jev', baseUrl: 'https://api.typesafe.ai', model: 'jev-latest', minProb: 0.6, decision: true },
+  vercel: { label: 'Vercel AI Gateway', baseUrl: 'https://ai-gateway.vercel.sh/v1', model: 'typesafe-ai/jev', minProb: 0.6, decision: true },
+  openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: '', minProb: 0.75, decision: false },
+  custom: { label: 'Custom (OpenAI-compatible)', baseUrl: '', model: '', minProb: 0.75, decision: false },
 };
 
 export const DEFAULT_SETTINGS = {

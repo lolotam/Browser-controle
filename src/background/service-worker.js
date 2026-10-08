@@ -89,7 +89,7 @@ async function handleRequest(msg) {
       await chatgptAuth.logout();
       return chatgptAuth.getAuthStatus();
     case 'fast-test': {
-      const ask = fastClientFor(msg.config.provider);
+      const ask = fastClientFor(msg.config);
       const { answers, model } = await ask({
         ...msg.config,
         state: { message: 'Hello, can you hear me?' },
@@ -98,11 +98,11 @@ async function handleRequest(msg) {
       return { model, noul: answers.greeting?.noul ?? null };
     }
     case 'list-fast-models':
-      return listCompatibleModels(msg.config.baseUrl, msg.config.apiKey);
+      return (await listCompatibleModels(msg.config.baseUrl, msg.config.apiKey)).filter((m) => m.decision);
     case 'list-models': {
       const settings = msg.settings ?? (await loadSettings());
       if (settings.provider === 'chatgpt') return listChatgptModels();
-      return listCompatibleModels(settings.compatible.baseUrl, settings.compatible.apiKey);
+      return (await listCompatibleModels(settings.compatible.baseUrl, settings.compatible.apiKey)).filter((m) => !m.decision);
     }
     default:
       throw new Error(`Unknown request ${msg.type}`);
@@ -168,7 +168,7 @@ async function startRun(text) {
     const tab = await browser.currentTab().catch(() => null);
     const execute = createToolExecutor(browser, { askUser: (q) => askUser(q, abort.signal) });
     const fastLayer = settings.fast.enabled && settings.fast.apiKey
-      ? createFastLayer({ config: settings.fast, browser, execute, task: text, ask: fastClientFor(settings.fast.provider) })
+      ? createFastLayer({ config: settings.fast, browser, execute, task: text, ask: fastClientFor(settings.fast) })
       : null;
     await runAgent({
       fastLayer,

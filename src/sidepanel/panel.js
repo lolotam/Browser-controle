@@ -327,16 +327,27 @@ function fillFastForm(fast) {
 function readFastForm() {
   const provider = $('fastProvider').value;
   const preset = fastPresets[provider] ?? {};
+  const model = $('fastModel').value.trim() || preset.model;
   return {
     enabled: $('fastEnabled').checked,
     mode: $('fastMode').value,
     provider,
+    decision: isDecisionModel(provider, model),
     apiKey: $('fastApiKey').value.trim(),
-    model: $('fastModel').value.trim() || preset.model,
+    model,
     baseUrl: $('fastBaseUrl').value.trim() || preset.baseUrl,
     minProb: Number($('fastMinProb').value) || preset.minProb,
     riskyMax: Number($('fastRiskyMax').value) || 0.3,
   };
+}
+
+// The fast list only holds decision models; a typed id counts as one when it is
+// the preset's default (list not loaded yet) or was saved as one before.
+function isDecisionModel(provider, model) {
+  if (fastModels.some((m) => m.id === model)) return true;
+  const preset = fastPresets[provider] ?? {};
+  if (model === preset.model) return Boolean(preset.decision);
+  return settings.fast.provider === provider && settings.fast.model === model && Boolean(settings.fast.decision);
 }
 
 function syncFast() {
@@ -374,7 +385,7 @@ async function loadFastModels(showErrors = false) {
     if (load !== loads.fast) return;
     fastModels = list;
     renderPicker($('fastModelSelect'), $('fastModel'), fastModels);
-    $('fastTestResult').textContent = '';
+    $('fastTestResult').textContent = list.length ? '' : t('fast.noDecisionModels');
   } catch (err) {
     if (load === loads.fast && showErrors) $('fastTestResult').textContent = `✗ ${err.message}`;
   }
