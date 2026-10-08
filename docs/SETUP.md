@@ -169,7 +169,8 @@ src/providers/chatgpt-auth.js      Codex device-code OAuth, refresh, auth.json i
 src/providers/chatgpt.js           Responses API on chatgpt.com/backend-api/codex
 src/providers/openai-compatible.js Chat Completions (for future providers)
 src/fast/                          optional fast layer (Jev or a gateway chat model)
-src/sidepanel/                     UI (Arabic, RTL) + safe Markdown renderer
+src/sidepanel/                     UI (Arabic RTL / English LTR, follows system theme) + safe Markdown renderer
+icons/, _locales/                  logo + PNG icons (scripts/render-icons.mjs), translated store name
 test/                              unit tests + e2e/run-e2e.mjs
 ```
 

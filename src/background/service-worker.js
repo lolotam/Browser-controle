@@ -118,15 +118,10 @@ async function startLogin() {
   // fetch/setTimeout polling does not count as activity; without this the worker
   // is killed ~30s in while the user signs in, and the poll silently dies.
   const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo(), 20000);
-  chatgptAuth.completeDeviceLogin(device, controller.signal).finally(() => clearInterval(keepAlive)).then(
-    async () => {
-      const status = await chatgptAuth.getAuthStatus();
-      for (const port of ports) port.postMessage({ type: 'auth-changed', status });
-    },
-    (err) => {
-      for (const port of ports) port.postMessage({ type: 'auth-error', message: err.message });
-    },
-  );
+  // Success reaches the panel through chrome.storage.onChanged; only failures need a message.
+  chatgptAuth.completeDeviceLogin(device, controller.signal).finally(() => clearInterval(keepAlive)).catch((err) => {
+    for (const port of ports) port.postMessage({ type: 'auth-error', message: err.message });
+  });
   return { userCode: device.userCode, verificationUrl: device.verificationUrl };
 }
 

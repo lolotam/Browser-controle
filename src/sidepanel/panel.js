@@ -1,32 +1,53 @@
 import { renderMarkdown } from './markdown.js';
+import { currentLanguage, resolveLanguage, setLanguage, t } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
 const request = async (type, payload = {}) => {
   const res = await chrome.runtime.sendMessage({ type, ...payload });
-  if (!res?.ok) throw new Error(res?.error ?? 'Request failed');
+  if (!res?.ok) throw new Error(res?.error ?? t('err.request'));
   return res.result;
 };
 
-const EFFORT_LABELS = { '': 'افتراضي الموديل', off: 'بدون تفكير', on: 'تفكير مفعّل', minimal: 'minimal', none: 'none', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max', ultra: 'ultra' };
+const TRANSLATED_EFFORTS = { '': 'effort.default', off: 'effort.off', on: 'effort.on' };
 const FALLBACK_EFFORTS = { chatgpt: ['low', 'medium', 'high', 'xhigh'], reasoning_effort: ['off', 'low', 'medium', 'high'], glm: ['on', 'off'] };
 
-const ui = { running: false, question: null, liveText: null, liveReasoning: null, steps: new Map() };
+const ui = { running: false, question: null, liveText: null, liveReasoning: null, trace: null, steps: new Map(), replayed: false };
 let settings = null;
 let presets = {};
 let fastPresets = {};
 let models = [];
+let authStatus = { connected: false };
+
+setLanguage(resolveLanguage('auto', chrome.i18n.getUILanguage()));
 
 // ---------- chat ----------
 
-const port = chrome.runtime.connect({ name: 'panel' });
-port.onMessage.addListener(onEvent);
+// The worker can be stopped while the panel stays open, which closes this port.
+// Reconnect lazily on the next message instead of looping on every restart.
+let port = null;
+
+function connect() {
+  port = chrome.runtime.connect({ name: 'panel' });
+  port.onMessage.addListener(onEvent);
+  port.onDisconnect.addListener(() => { port = null; });
+}
+
+function send(message) {
+  if (!port) connect();
+  port.postMessage(message);
+}
+
+connect();
 
 function onEvent(event) {
   switch (event.type) {
     case 'replay':
-      $('messages').querySelectorAll('.msg, .step, .handoff').forEach((n) => n.remove());
-      ui.steps.clear();
-      event.events.forEach(onEvent);
+      // A restarted worker replays an empty transcript; keep what is on screen.
+      if (!ui.replayed) {
+        clearMessages();
+        event.events.forEach(onEvent);
+        ui.replayed = true;
+      }
       setRunning(event.running);
       if (event.question) setQuestion(event.question);
       break;
@@ -76,19 +97,17 @@ function onEvent(event) {
       ui.liveText?.remove();
       ui.liveText = null;
       const node = add(`msg final${event.success ? '' : ' partial'}`, '');
-      node.innerHTML = `<h3>${event.success ? '✅ التقرير النهائي' : '⚠️ تقرير (المهمة لم تكتمل)'}</h3>${renderMarkdown(event.report)}`;
+      node.innerHTML = renderMarkdown(event.report);
+      const heading = document.createElement('h3');
+      heading.textContent = t(event.success ? 'report.final' : 'report.partial');
+      node.prepend(heading);
       break;
     }
     case 'error':
       add('msg error', event.message);
       break;
     case 'stopped':
-      add('msg error', 'تم إيقاف المهمة.');
-      break;
-    case 'auth-changed':
-      showAuth(event.status);
-      $('deviceBox').hidden = true;
-      loadModels();
+      add('msg error', t('msg.stopped'));
       break;
     case 'auth-error':
       $('deviceBox').hidden = true;
@@ -101,6 +120,7 @@ function onEvent(event) {
 
 function add(className, text) {
   $('emptyState').hidden = true;
+  ui.trace = null;
   const node = document.createElement('div');
   node.className = className;
   node.dir = 'auto';
@@ -110,23 +130,36 @@ function add(className, text) {
   return node;
 }
 
+/** Consecutive tool steps share one trace block. */
 function addStep({ step, name, args, fast }) {
   $('emptyState').hidden = true;
+  if (!ui.trace) {
+    ui.trace = document.createElement('div');
+    ui.trace.className = 'trace';
+    $('messages').append(ui.trace);
+  }
   const row = document.createElement('div');
   row.className = fast ? 'step fast' : 'step';
   const compact = JSON.stringify(args ?? {}).replace(/^\{|\}$/g, '');
   row.innerHTML = '<span class="mark">…</span><span class="name"></span><span class="args"></span>';
   row.querySelector('.name').textContent = `${step}. ${name}`;
   row.querySelector('.args').textContent = compact;
-  $('messages').append(row);
+  ui.trace.append(row);
   ui.steps.set(step + name, row);
   scrollDown();
 }
 
+function clearMessages() {
+  $('messages').querySelectorAll('.msg, .trace, .handoff').forEach((n) => n.remove());
+  ui.steps.clear();
+  ui.trace = null;
+}
+
 function setQuestion(question) {
   ui.question = question;
-  add('msg ask', `❓ ${question}`);
-  $('hint').textContent = 'الوكيل مستني ردك…';
+  add('msg ask', question);
+  $('hint').textContent = t('status.waiting');
+  $('sendBtn').hidden = false;
   $('input').focus();
 }
 
@@ -134,11 +167,12 @@ function setRunning(running) {
   ui.running = running;
   $('statusDot').classList.toggle('running', running);
   $('stopBtn').hidden = !running;
+  $('sendBtn').hidden = running && !ui.question;
   if (!running) {
     ui.question = null;
     $('hint').textContent = '';
   } else if (!ui.question) {
-    $('hint').textContent = 'جاري التنفيذ…';
+    $('hint').textContent = t('status.running');
   }
 }
 
@@ -152,14 +186,15 @@ $('composer').addEventListener('submit', (e) => {
   const text = $('input').value.trim();
   if (!text) return;
   if (ui.question) {
-    port.postMessage({ type: 'answer', text });
+    send({ type: 'answer', text });
     ui.question = null;
-    $('hint').textContent = 'جاري التنفيذ…';
+    $('hint').textContent = t('status.running');
+    $('sendBtn').hidden = true;
   } else if (ui.running) {
-    $('hint').textContent = 'استنى المهمة الحالية تخلص أو اضغط إيقاف.';
+    $('hint').textContent = t('status.busy');
     return;
   } else {
-    port.postMessage({ type: 'run', text });
+    send({ type: 'run', text });
   }
   $('input').value = '';
 });
@@ -169,16 +204,34 @@ $('input').addEventListener('keydown', (e) => {
     $('composer').requestSubmit();
   }
 });
-$('stopBtn').addEventListener('click', () => port.postMessage({ type: 'stop' }));
+$('stopBtn').addEventListener('click', () => send({ type: 'stop' }));
 $('newChatBtn').addEventListener('click', () => {
-  port.postMessage({ type: 'new-chat' });
-  $('messages').querySelectorAll('.msg, .step, .handoff').forEach((n) => n.remove());
+  send({ type: 'new-chat' });
+  clearMessages();
   $('emptyState').hidden = false;
 });
 document.querySelectorAll('.examples li').forEach((li) => li.addEventListener('click', () => {
   $('input').value = li.textContent;
   $('input').focus();
 }));
+
+// ---------- language ----------
+
+$('langBtn').addEventListener('click', async () => {
+  const next = currentLanguage() === 'ar' ? 'en' : 'ar';
+  applyLanguage(next);
+  settings = await request('save-settings', { settings: { ...settings, uiLanguage: next } });
+});
+
+/** Static text is retranslated by setLanguage; text this file renders is redrawn here. */
+function applyLanguage(language) {
+  setLanguage(language);
+  if (!settings) return;
+  showAuth(authStatus);
+  updateChip();
+  renderModels();
+  renderEfforts($('effort').value);
+}
 
 // ---------- settings ----------
 
@@ -196,6 +249,7 @@ async function init() {
   settings = data.settings;
   presets = data.presets;
   fastPresets = data.fastPresets;
+  setLanguage(resolveLanguage(settings.uiLanguage, chrome.i18n.getUILanguage()));
   $('preset').innerHTML = Object.entries(presets).map(([id, p]) => `<option value="${id}">${p.label}</option>`).join('');
   $('fastProvider').innerHTML = Object.entries(fastPresets).map(([id, p]) => `<option value="${id}">${p.label}</option>`).join('');
   fillForm();
@@ -204,6 +258,17 @@ async function init() {
   if (!activeModel()) toggleSettings(true);
   loadModels();
 }
+
+// Tokens land in storage even when the worker that polled for them was restarted
+// and its port to this panel is gone, so storage is the reliable sign-in signal.
+chrome.storage.onChanged.addListener(async (changes, area) => {
+  if (area !== 'local' || !changes.chatgptAuth) return;
+  showAuth(await request('auth-status'));
+  if (changes.chatgptAuth.newValue) {
+    $('deviceBox').hidden = true;
+    loadModels();
+  }
+});
 
 function fillForm() {
   $('provider').value = settings.provider;
@@ -283,21 +348,21 @@ $('fastProvider').addEventListener('change', () => {
   syncFastProvider();
 });
 $('fastModelsBtn').addEventListener('click', async () => {
-  $('fastTestResult').textContent = 'جاري تحميل الموديلات…';
+  $('fastTestResult').textContent = t('model.loading');
   try {
     const list = await request('list-fast-models', { config: readFastForm() });
     $('fastModelList').innerHTML = list.map((m) => `<option value="${escapeAttr(m.id)}"></option>`).join('');
-    $('fastTestResult').textContent = `${list.length} موديل متاح`;
+    $('fastTestResult').textContent = t('model.count', { n: list.length });
   } catch (err) {
     $('fastTestResult').textContent = `✗ ${err.message}`;
   }
 });
 $('fastTestBtn').addEventListener('click', async () => {
-  $('fastTestResult').textContent = 'جاري الاختبار…';
+  $('fastTestResult').textContent = t('fast.testing');
   const started = performance.now();
   try {
     const { model } = await request('fast-test', { config: readFastForm() });
-    $('fastTestResult').textContent = `✓ شغال (${model}) في ${Math.round(performance.now() - started)}ms`;
+    $('fastTestResult').textContent = t('fast.testOk', { model, ms: Math.round(performance.now() - started) });
   } catch (err) {
     $('fastTestResult').textContent = `✗ ${err.message}`;
   }
@@ -361,7 +426,7 @@ $('refreshModelsBtn').addEventListener('click', () => loadModels(true));
 async function loadModels(showErrors = false) {
   const draft = readForm();
   if (draft.provider === 'chatgpt' && !(await request('auth-status')).connected) return;
-  $('modelInfo').textContent = 'جاري تحميل الموديلات…';
+  $('modelInfo').textContent = t('model.loading');
   try {
     models = await request('list-models', { settings: draft });
     renderModels();
@@ -369,15 +434,15 @@ async function loadModels(showErrors = false) {
       $('modelInput').value = models[0].id;
       renderEfforts(models[0].defaultEffort ?? '');
     }
-    $('modelInfo').textContent = `${models.length} موديل متاح`;
+    $('modelInfo').textContent = t('model.count', { n: models.length });
   } catch (err) {
-    $('modelInfo').textContent = showErrors ? err.message : 'اكتب اسم الموديل يدويًا أو اضغط ↻';
+    $('modelInfo').textContent = showErrors ? err.message : t('model.fallback');
   }
 }
 
 function renderModels() {
   const current = $('modelInput').value;
-  $('modelSelect').innerHTML = '<option value="">— اختر من القائمة —</option>'
+  $('modelSelect').innerHTML = `<option value="">${escapeAttr(t('model.pick'))}</option>`
     + models.map((m) => `<option value="${escapeAttr(m.id)}">${escapeAttr(m.name)}</option>`).join('');
   if (models.some((m) => m.id === current)) $('modelSelect').value = current;
 }
@@ -388,14 +453,15 @@ function renderEfforts(selected) {
   const style = provider === 'chatgpt' ? 'chatgpt' : presets[$('preset').value]?.thinkingStyle ?? 'reasoning_effort';
   const levels = model?.efforts?.length ? model.efforts : FALLBACK_EFFORTS[style];
   const options = ['', ...levels];
-  $('effort').innerHTML = options.map((e) => `<option value="${e}">${EFFORT_LABELS[e] ?? e}${model?.defaultEffort === e ? ' (افتراضي)' : ''}</option>`).join('');
+  $('effort').innerHTML = options.map((e) => `<option value="${e}">${TRANSLATED_EFFORTS[e] ? t(TRANSLATED_EFFORTS[e]) : e}${model?.defaultEffort === e ? t('effort.defaultMark') : ''}</option>`).join('');
   $('effort').value = options.includes(selected) ? selected : '';
 }
 
 function showAuth(status) {
+  authStatus = status;
   $('authStatus').textContent = status.connected
-    ? `متصل: ${status.email ?? 'ChatGPT'}${status.planType ? ` — ${status.planType}` : ''}`
-    : 'غير متصل';
+    ? t('auth.connected', { who: `${status.email ?? 'ChatGPT'}${status.planType ? ` — ${status.planType}` : ''}` })
+    : t('auth.disconnected');
   $('loginBtn').hidden = status.connected;
   $('logoutBtn').hidden = !status.connected;
 }
@@ -429,15 +495,15 @@ $('importBtn').addEventListener('click', async () => {
 $('saveBtn').addEventListener('click', async () => {
   const next = readForm();
   if (!currentProviderSettings(next).model) {
-    showSettingsError('اختر موديل الأول.');
+    showSettingsError(t('err.pickModel'));
     return;
   }
   if (next.fast.enabled && !next.fast.apiKey) {
-    showSettingsError('الطبقة السريعة محتاجة API key.');
+    showSettingsError(t('err.fastKey'));
     return;
   }
   if (next.fast.enabled && !next.fast.baseUrl) {
-    showSettingsError('الطبقة السريعة محتاجة Base URL.');
+    showSettingsError(t('err.fastUrl'));
     return;
   }
   settings = await request('save-settings', { settings: next });
@@ -448,8 +514,8 @@ $('saveBtn').addEventListener('click', async () => {
 function updateChip() {
   const p = currentProviderSettings();
   const label = settings.provider === 'chatgpt' ? 'ChatGPT' : presets[settings.compatible.preset]?.label ?? 'API';
-  const fastTag = settings.fast.enabled && settings.fast.apiKey ? ' · ⚡Jev' : '';
-  $('modelChip').textContent = p.model ? `${label} · ${p.model}${p.effort ? ` · ${p.effort}` : ''}${fastTag}` : 'لم يتم اختيار موديل';
+  const fastTag = settings.fast.enabled && settings.fast.apiKey ? ' · ⚡' : '';
+  $('modelChip').textContent = p.model ? `${label} · ${p.model}${p.effort ? ` · ${p.effort}` : ''}${fastTag}` : t('model.none');
 }
 
 function showSettingsError(message) {

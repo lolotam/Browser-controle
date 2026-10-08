@@ -1,82 +1,94 @@
 <!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="en" dir="ltr">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Browser Agent</title>
+  <link rel="icon" href="../../icons/icon-32.png" />
   <link rel="stylesheet" href="panel.css" />
 </head>
 <body>
   <header class="bar">
     <div class="brand">
+      <img class="logo" src="../../icons/logo.svg" alt="" width="22" height="22" />
+      <strong data-i18n="app.title">Browser Agent</strong>
       <span class="dot" id="statusDot"></span>
-      <strong>Browser Agent</strong>
-      <span class="chip" id="modelChip">—</span>
     </div>
+    <span class="chip" id="modelChip" dir="ltr">—</span>
     <div class="actions">
-      <button class="icon" id="newChatBtn" title="محادثة جديدة">＋</button>
-      <button class="icon" id="settingsBtn" title="الإعدادات">⚙</button>
+      <button type="button" class="ghost lang" id="langBtn" data-i18n="lang.switchLabel" data-i18n-title="lang.switchTitle">ع</button>
+      <button type="button" class="ghost icon" id="newChatBtn" data-i18n-title="header.newChat">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+      </button>
+      <button type="button" class="ghost icon" id="settingsBtn" data-i18n-title="header.settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></svg>
+      </button>
     </div>
   </header>
 
   <main id="chatView">
     <section id="messages" aria-live="polite">
       <div class="empty" id="emptyState">
-        <h2>إيه المهمة؟</h2>
-        <p>اكتب أي حاجة عايز تتعمل في البراوزر: بحث، تجميع معلومات، ملء فورم، مقارنة أسعار… والوكيل هينفذ خطوة بخطوة ويديك تقرير نهائي.</p>
+        <img class="empty-logo" src="../../icons/logo.svg" alt="" width="44" height="44" />
+        <h2 data-i18n="empty.title"></h2>
+        <p data-i18n="empty.body"></p>
         <ul class="examples">
-          <li>ابحث عن أرخص 3 لابتوبات RTX 4060 في أمازون مصر وقارن بينهم في جدول</li>
-          <li>افتح Hacker News ولخّص أهم 5 مواضيع النهارده مع الروابط</li>
-          <li>اقرأ الصفحة المفتوحة وطلّع منها كل الإيميلات وأرقام التليفون</li>
+          <li data-i18n="empty.ex1"></li>
+          <li data-i18n="empty.ex2"></li>
+          <li data-i18n="empty.ex3"></li>
         </ul>
       </div>
     </section>
     <form id="composer">
-      <textarea id="input" rows="3" dir="auto" placeholder="اكتب المهمة… (Enter للإرسال، Shift+Enter لسطر جديد)"></textarea>
-      <div class="composer-row">
-        <span class="hint" id="hint"></span>
-        <button type="button" class="danger" id="stopBtn" hidden>إيقاف</button>
-        <button type="submit" class="primary" id="sendBtn">إرسال</button>
+      <div class="composer-box">
+        <textarea id="input" rows="2" dir="auto" data-i18n-placeholder="composer.placeholder"></textarea>
+        <button type="button" class="round danger" id="stopBtn" data-i18n-title="composer.stop" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5" /></svg>
+        </button>
+        <button type="submit" class="round primary" id="sendBtn" data-i18n-title="composer.send">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" /></svg>
+        </button>
       </div>
+      <span class="hint" id="hint"></span>
     </form>
   </main>
 
   <section id="settingsView" hidden>
-    <h2>الإعدادات</h2>
+    <h2 data-i18n="settings.title"></h2>
 
     <label class="field">
-      <span>مزوّد الذكاء</span>
+      <span data-i18n="settings.provider"></span>
       <select id="provider">
-        <option value="chatgpt">اشتراك ChatGPT (Plus / Pro / Business)</option>
-        <option value="compatible">API متوافق مع OpenAI (Grok / GLM / غيرها)</option>
+        <option value="chatgpt" data-i18n="settings.provider.chatgpt"></option>
+        <option value="compatible" data-i18n="settings.provider.compatible"></option>
       </select>
     </label>
 
     <div id="chatgptSection" class="card">
       <div class="row between">
-        <span id="authStatus">غير متصل</span>
-        <button type="button" id="logoutBtn" hidden>تسجيل خروج</button>
+        <span id="authStatus"></span>
+        <button type="button" id="logoutBtn" data-i18n="auth.logout" hidden></button>
       </div>
-      <button type="button" class="primary" id="loginBtn">تسجيل الدخول بحساب ChatGPT</button>
+      <button type="button" class="primary" id="loginBtn" data-i18n="auth.login"></button>
       <div id="deviceBox" class="device" hidden>
-        <p>افتح الصفحة اللي اتفتحت، سجّل دخول، واكتب الكود ده:</p>
+        <p data-i18n="auth.deviceHelp"></p>
         <code id="deviceCode" dir="ltr"></code>
-        <div class="row">
-          <a id="deviceLink" target="_blank" rel="noopener">فتح صفحة التفعيل</a>
-          <button type="button" id="cancelLoginBtn">إلغاء</button>
+        <div class="row between">
+          <a id="deviceLink" target="_blank" rel="noopener" data-i18n="auth.openPage"></a>
+          <button type="button" id="cancelLoginBtn" data-i18n="common.cancel"></button>
         </div>
       </div>
       <details>
-        <summary>بديل: استيراد auth.json من Codex CLI</summary>
-        <p class="muted">شغّل <code dir="ltr">codex login</code> على جهازك، وبعدين الصق محتوى <code dir="ltr">~/.codex/auth.json</code> هنا.</p>
+        <summary data-i18n="auth.importSummary"></summary>
+        <p class="muted"><span data-i18n="auth.importRun"></span> <code dir="ltr">codex login</code> <span data-i18n="auth.importThen"></span> <code dir="ltr">~/.codex/auth.json</code> <span data-i18n="auth.importHere"></span></p>
         <textarea id="authJson" rows="4" dir="ltr" placeholder='{"tokens": {...}}'></textarea>
-        <button type="button" id="importBtn">استيراد</button>
+        <button type="button" id="importBtn" data-i18n="auth.import"></button>
       </details>
     </div>
 
     <div id="compatibleSection" class="card" hidden>
       <label class="field">
-        <span>المزوّد</span>
+        <span data-i18n="compat.preset"></span>
         <select id="preset"></select>
       </label>
       <label class="field">
@@ -91,42 +103,42 @@
 
     <div class="card">
       <label class="field">
-        <span>الموديل</span>
+        <span data-i18n="model.label"></span>
         <div class="row">
-          <select id="modelSelect"></select>
-          <button type="button" id="refreshModelsBtn" title="تحميل قائمة الموديلات">↻</button>
+          <select id="modelSelect" class="grow"></select>
+          <button type="button" class="ghost icon" id="refreshModelsBtn" data-i18n-title="model.refresh">↻</button>
         </div>
-        <input id="modelInput" dir="ltr" placeholder="أو اكتب اسم الموديل يدويًا" />
+        <input id="modelInput" dir="ltr" data-i18n-placeholder="model.manual" />
         <small class="muted" id="modelInfo"></small>
       </label>
       <label class="field">
-        <span>مستوى التفكير (Reasoning effort)</span>
+        <span data-i18n="effort.label"></span>
         <select id="effort"></select>
       </label>
     </div>
 
     <div class="card">
       <label class="field">
-        <span>أقصى عدد خطوات للمهمة</span>
+        <span data-i18n="settings.maxSteps"></span>
         <input id="maxSteps" type="number" min="5" max="300" />
       </label>
-      <label class="check"><input type="checkbox" id="vision" /> السماح بلقطات الشاشة (يحتاج موديل يدعم الصور)</label>
-      <label class="check"><input type="checkbox" id="allowJavascript" /> السماح للوكيل بتشغيل JavaScript في الصفحات (قوي لكن أخطر)</label>
+      <label class="check"><input type="checkbox" id="vision" /> <span data-i18n="settings.vision"></span></label>
+      <label class="check"><input type="checkbox" id="allowJavascript" /> <span data-i18n="settings.javascript"></span></label>
     </div>
 
     <div class="card">
-      <label class="check"><input type="checkbox" id="fastEnabled" /> <strong>⚡ الطبقة السريعة</strong></label>
-      <p class="muted">Jev بيقرر الخطوات الواضحة (ضغط، كتابة نص مكتوب بين علامات تنصيص في المهمة، Enter، سكرول، رجوع) في أقل من ثانية من غير ما يستنى الموديل الكبير. ولما ما يبقاش متأكد، أو الخطوة حساسة، بيسلّمها للموديل الكبير ومعاها ترتيب الاختيارات بالاحتمالات.</p>
+      <label class="check"><input type="checkbox" id="fastEnabled" /> <strong data-i18n="fast.title"></strong></label>
+      <p class="muted" data-i18n="fast.desc"></p>
       <div id="fastFields" class="fields">
         <label class="field">
-          <span>المزوّد</span>
+          <span data-i18n="fast.provider"></span>
           <select id="fastProvider"></select>
         </label>
         <label class="field">
-          <span>الوضع</span>
+          <span data-i18n="fast.mode"></span>
           <select id="fastMode">
-            <option value="auto">تنفيذ تلقائي للخطوات الواثقة + اقتراحات للموديل</option>
-            <option value="hints">اقتراحات للموديل فقط (أأمن، أبطأ)</option>
+            <option value="auto" data-i18n="fast.mode.auto"></option>
+            <option value="hints" data-i18n="fast.mode.hints"></option>
           </select>
         </label>
         <label class="field">
@@ -134,29 +146,29 @@
           <input id="fastApiKey" type="password" dir="ltr" autocomplete="off" />
         </label>
         <label class="field">
-          <span>الموديل</span>
+          <span data-i18n="model.label"></span>
           <div class="row">
             <input id="fastModel" class="grow" dir="ltr" list="fastModelList" />
-            <button type="button" id="fastModelsBtn" title="تحميل قائمة الموديلات">↻</button>
+            <button type="button" class="ghost icon" id="fastModelsBtn" data-i18n-title="model.refresh">↻</button>
           </div>
           <datalist id="fastModelList"></datalist>
         </label>
         <label class="field"><span>Base URL</span><input id="fastBaseUrl" dir="ltr" /></label>
         <div class="row">
-          <label class="field grow"><span>أقل ثقة للتنفيذ</span><input id="fastMinProb" type="number" min="0.3" max="0.99" step="0.05" /></label>
-          <label class="field grow"><span>حد الخطوات الحساسة</span><input id="fastRiskyMax" type="number" min="0.05" max="0.9" step="0.05" /></label>
+          <label class="field grow"><span data-i18n="fast.minProb"></span><input id="fastMinProb" type="number" min="0.3" max="0.99" step="0.05" /></label>
+          <label class="field grow"><span data-i18n="fast.riskyMax"></span><input id="fastRiskyMax" type="number" min="0.05" max="0.9" step="0.05" /></label>
         </div>
         <div class="row">
-          <button type="button" id="fastTestBtn">اختبار الاتصال</button>
+          <button type="button" id="fastTestBtn" data-i18n="fast.test"></button>
           <small class="muted" id="fastTestResult"></small>
         </div>
       </div>
     </div>
 
     <p class="error" id="settingsError" hidden></p>
-    <div class="row end">
-      <button type="button" id="closeSettingsBtn">رجوع</button>
-      <button type="button" class="primary" id="saveBtn">حفظ</button>
+    <div class="row end sticky-actions">
+      <button type="button" id="closeSettingsBtn" data-i18n="common.back"></button>
+      <button type="button" class="primary" id="saveBtn" data-i18n="common.save"></button>
     </div>
   </section>
 

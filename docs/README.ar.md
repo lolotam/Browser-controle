@@ -92,7 +92,7 @@ src/
   fast/jev-client.js             TypeSafe System One API (POST /v1/systemone)
   fast/chat-judge-client.js      نفس أسئلة Jev لأي موديل محادثة (OpenRouter / Vercel / متوافق)
   fast/fast-layer.js             أسئلة Jev + قواعد التنفيذ أو التحويل للـ LLM
-  sidepanel/                     الواجهة (عربي RTL) + عارض Markdown آمن
+  sidepanel/                     الواجهة (عربي RTL / إنجليزي LTR، فاتح أو داكن حسب النظام) + عارض Markdown آمن
 test/                            اختبارات unit (node:test) + اختبار E2E
 ```
 

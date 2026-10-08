@@ -8,6 +8,7 @@
 //
 //   npm install && npm run e2e
 //   CHROMIUM_PATH=/path/to/chrome npm run e2e   (if Playwright's browser is not installed)
+//   E2E_SCREENSHOTS=out E2E_COLOR_SCHEME=dark npm run e2e   (save the panel after each scenario for visual review)
 
 import http from 'node:http';
 import path from 'node:path';
@@ -171,6 +172,10 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
     await panel.click('#sendBtn');
     const final = await panel.waitForSelector('.msg.final', { timeout: 60000 });
     const report = await final.innerText();
+    if (process.env.E2E_SCREENSHOTS) {
+      await panel.setViewportSize({ width: 400, height: 720 });
+      await panel.screenshot({ path: path.join(process.env.E2E_SCREENSHOTS, `${name}-${process.env.E2E_COLOR_SCHEME ?? 'light'}.png`) });
+    }
     const steps = await panel.$$eval('.step', (rows) => rows.map((r) => `${r.classList.contains('fast') ? '⚡' : ' '} ${r.innerText.replace(/\s+/g, ' ')}`));
     console.log(`\n== scenario: ${name} ==\n${steps.join('\n')}\n--- report ---\n${report}\n(LLM calls: ${counts.llm}, Jev calls: ${counts.jev}, judge calls: ${counts.judge})`);
 
@@ -201,6 +206,7 @@ async function main() {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-e2e-'));
   const context = await chromium.launchPersistentContext(userDataDir, {
     headless: true,
+    colorScheme: process.env.E2E_COLOR_SCHEME === 'dark' ? 'dark' : 'light',
     executablePath: process.env.CHROMIUM_PATH || undefined,
     args: [`--disable-extensions-except=${EXTENSION_DIR}`, `--load-extension=${EXTENSION_DIR}`],
   });

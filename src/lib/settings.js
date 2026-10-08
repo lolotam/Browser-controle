@@ -24,6 +24,7 @@ export const DEFAULT_SETTINGS = {
   maxSteps: 40,
   vision: true,
   allowJavascript: false,
+  uiLanguage: 'auto',
 };
 
 export async function loadSettings() {
