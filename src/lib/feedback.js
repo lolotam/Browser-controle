@@ -3,7 +3,7 @@
 // someone send to that inbox. Web3Forms was tried first: its Cloudflare bot check
 // answered extension requests with a challenge page instead of JSON.
 
-export const FEEDBACK_FORM_ID = '';
+export const FEEDBACK_FORM_ID = 'xdeagwgr';
 const endpoint = () => `https://formspree.io/f/${FEEDBACK_FORM_ID}`;
 const MAX_DISMISSALS = 3;
 
