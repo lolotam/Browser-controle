@@ -18,7 +18,7 @@ agent drives one tab and brings it to the front when switching.
 
 - Sessions run tasks **in parallel**.
 - A session **acts only on tabs in its own group**; it can list all tabs.
-- **One panel per window** with a session list in the header.
+- **One panel per window** with a session list in the header. Opening the panel starts a new session (an unused empty one is reused); running sessions are opened from the list. (Changed after review: the panel first reopened the window's last session.)
 - History is **kept until the user deletes it**.
 
 ## Data
@@ -31,7 +31,6 @@ agent drives one tab and brings it to the front when switching.
   wrapper keeps; a reopened session continues through a handoff message built
   from it. (Implementation note: this replaced a planned `providerHistory`, which
   would have tied a saved session to one provider's message format.)
-- `panelSession:<windowId>`: which session each window shows.
 
 Titles default to the first 6 words of the first task and can be renamed.
 
@@ -41,8 +40,8 @@ The single `state` object becomes a `SessionRunner` per open session, each with
 its own model session (with the fallback wrapper from the fallback design), abort
 controller, pending question and `BrowserController`. Runners are created on
 demand and dropped when idle; storage stays the source of truth. A runner saves
-after every event that changes the transcript (debounced 500 ms). Ports carry
-`{ windowId, sessionId }`; events go only to panels showing that session.
+after every event that changes the transcript (debounced 500 ms). Ports are
+named `panel:<sessionId>`; events go only to panels showing that session.
 
 ## Tabs and groups
 

@@ -55,10 +55,3 @@ test('a session gets its title from the first task until the user renames it', a
   await sessions.titleFromFirstTask(meta.id, 'A later task');
   assert.equal((await sessions.listSessions())[0].title, 'Find the three cheapest RTX 4060…', 'only the first task names the session');
 });
-
-test('each window remembers which session it shows', async () => {
-  const meta = await sessions.createStoredSession();
-  await sessions.setWindowSession(3, meta.id);
-  assert.equal(await sessions.getWindowSession(3), meta.id);
-  assert.equal(await sessions.getWindowSession(4), null);
-});
