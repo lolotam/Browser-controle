@@ -9,12 +9,15 @@ const FALLBACK_EFFORTS = { chatgpt: ['low', 'medium', 'high', 'xhigh'], reasonin
 
 const slotOf = (s) => (s.provider === 'chatgpt' ? s.chatgpt : s.compatible);
 
-export function createProviderForm(root, { request, getPresets }) {
+export function createProviderForm(root, { request, getPresets, keyStore }) {
   const f = (name) => root.querySelector(`[data-field="${name}"]`);
   // Last filled values; also remembers the other provider's model while switching.
   let saved = null;
   let models = [];
   let latestLoad = 0;
+  // Custom endpoint keys are not shared, so the form keeps the last one typed.
+  let preset = '';
+  let customKey = '';
 
   function fill(s) {
     saved = { provider: s.provider, chatgpt: { ...s.chatgpt }, compatible: { ...s.compatible } };
@@ -23,6 +26,8 @@ export function createProviderForm(root, { request, getPresets }) {
     f('preset').value = s.compatible.preset;
     f('baseUrl').value = s.compatible.baseUrl;
     f('apiKey').value = s.compatible.apiKey;
+    preset = s.compatible.preset;
+    customKey = preset === 'custom' ? s.compatible.apiKey : '';
     f('modelInput').value = slotOf(s).model;
     models = [];
     syncSections();
@@ -94,9 +99,12 @@ export function createProviderForm(root, { request, getPresets }) {
     loadModels();
   });
   f('preset').addEventListener('change', () => {
-    const preset = getPresets()[f('preset').value];
-    f('baseUrl').value = preset.baseUrl;
-    f('modelInput').value = preset.model;
+    if (preset === 'custom') customKey = f('apiKey').value.trim();
+    preset = f('preset').value;
+    const defaults = getPresets()[preset];
+    f('baseUrl').value = defaults.baseUrl;
+    keyStore.show(f('apiKey'), preset, customKey);
+    f('modelInput').value = defaults.model;
     models = [];
     renderModels();
     renderEfforts('');
@@ -108,6 +116,7 @@ export function createProviderForm(root, { request, getPresets }) {
   });
   f('modelInput').addEventListener('input', () => renderEfforts(f('effort').value));
   f('refresh').addEventListener('click', () => loadModels(true));
+  keyStore.register(f('apiKey'), () => f('preset').value);
   bindSearch(f('modelSearch'), f('modelSelect'), () => models, renderModels);
 
   return {

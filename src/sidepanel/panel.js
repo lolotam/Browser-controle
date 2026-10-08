@@ -1,6 +1,7 @@
 import { renderMarkdown } from './markdown.js';
 import { currentLanguage, resolveLanguage, setLanguage, t } from './i18n.js';
 import { bindSearch, escapeAttr, pickModel, renderPicker } from './model-picker.js';
+import { createKeyStore } from './key-store.js';
 import { createProviderForm } from './provider-form.js';
 import { FEEDBACK_FORM_ID, afterDismissal, afterRating, sendFeedback, shouldAskForRating } from '../lib/feedback.js';
 
@@ -83,7 +84,8 @@ function onEvent(event) {
       addStep(event);
       break;
     case 'fast-handoff':
-      add('handoff', `⚡→🧠 ${event.reason}`);
+      traceBlock().append(Object.assign(document.createElement('div'), { className: 'step handoff', textContent: `⚡→🧠 ${event.reason}` }));
+      scrollDown();
       break;
     case 'tool-end': {
       const row = ui.steps.get(event.step + event.name);
@@ -126,7 +128,7 @@ function onEvent(event) {
       refreshSessions();
       break;
     case 'session-missing':
-      request('blank-session').then(openSession);
+      showTabSession();
       break;
     case 'auth-error':
       $('deviceBox').hidden = true;
@@ -149,27 +151,31 @@ function add(className, text) {
   return node;
 }
 
-/** Consecutive tool steps share one trace block. */
-function addStep({ step, name, args, fast }) {
+/** Consecutive tool steps and fast-layer hand-overs share one trace block. */
+function traceBlock() {
   $('emptyState').hidden = true;
   if (!ui.trace) {
     ui.trace = document.createElement('div');
     ui.trace.className = 'trace';
     $('messages').append(ui.trace);
   }
+  return ui.trace;
+}
+
+function addStep({ step, name, args, fast }) {
   const row = document.createElement('div');
   row.className = fast ? 'step fast' : 'step';
   const compact = JSON.stringify(args ?? {}).replace(/^\{|\}$/g, '');
   row.innerHTML = '<span class="mark">…</span><span class="name"></span><span class="args"></span>';
   row.querySelector('.name').textContent = `${step}. ${name}`;
   row.querySelector('.args').textContent = compact;
-  ui.trace.append(row);
+  traceBlock().append(row);
   ui.steps.set(step + name, row);
   scrollDown();
 }
 
 function clearMessages() {
-  $('messages').querySelectorAll('.msg, .trace, .handoff').forEach((n) => n.remove());
+  $('messages').querySelectorAll('.msg, .trace').forEach((n) => n.remove());
   ui.steps.clear();
   ui.trace = null;
   ui.notices = [];
@@ -251,7 +257,7 @@ $('input').addEventListener('keydown', (e) => {
 $('stopBtn').addEventListener('click', () => send({ type: 'stop' }));
 $('newChatBtn').addEventListener('click', async () => {
   const meta = await request('session-create');
-  await openSession(meta.id);
+  await chooseSession(meta.id);
 });
 document.querySelectorAll('.examples li').forEach((li) => li.addEventListener('click', () => {
   $('input').value = li.textContent;
@@ -260,10 +266,41 @@ document.querySelectorAll('.examples li').forEach((li) => li.addEventListener('c
 
 // ---------- sessions ----------
 
+// The panel follows the tab the user is looking at: each tab has its own session,
+// a new tab starts on a blank one, and a tab where a task ran keeps its session.
+let windowId = null;
+let tabLookups = 0;
+
 async function startSessions() {
-  sessionId = await request('blank-session');
-  connect();
+  windowId = (await chrome.windows.getCurrent()).id;
+  // Opened as a page in a tab (as the e2e tests do), the panel is that tab's own
+  // and must not jump to the session of whichever tab gets focus.
+  const ownTab = await chrome.tabs.getCurrent();
+  if (!ownTab) {
+    chrome.tabs.onActivated.addListener((info) => {
+      if (info.windowId === windowId) showTabSession(info.tabId).catch(() => {}); // the tab may close mid-lookup
+    });
+  }
+  await showTabSession(ownTab?.id);
   await refreshSessions();
+}
+
+async function activeTabId() {
+  const [tab] = await chrome.tabs.query({ active: true, windowId });
+  return tab?.id;
+}
+
+async function showTabSession(tabId) {
+  const lookup = ++tabLookups;
+  const id = await request('tab-session', { tabId: tabId ?? (await activeTabId()) });
+  if (lookup === tabLookups) await openSession(id); // a later tab switch wins
+}
+
+/** A session picked by the user (from the list, or a new one) becomes the current tab's. */
+async function chooseSession(id) {
+  tabLookups += 1; // a tab lookup still in flight must not replace the user's pick
+  await request('bind-tab', { tabId: await activeTabId(), sessionId: id });
+  await openSession(id);
 }
 
 async function openSession(id) {
@@ -317,7 +354,7 @@ function sessionRow(meta) {
   title.className = 'session-open';
   // <bdi> keeps an English title readable in the Arabic list without flipping the row's alignment.
   title.append(Object.assign(document.createElement('bdi'), { textContent: sessionLabel(meta) }));
-  title.addEventListener('click', () => openSession(meta.id));
+  title.addEventListener('click', () => chooseSession(meta.id));
   const rename = iconButton(ICONS.rename, t('session.rename'), () => startRename(row, title, meta));
   const remove = iconButton(ICONS.remove, t('session.delete'), () => deleteSessionAsked(meta));
   row.append(dot, title, rename, remove);
@@ -372,7 +409,7 @@ function startRename(row, title, meta) {
 async function deleteSessionAsked(meta) {
   if (!window.confirm(t('session.confirmDelete', { title: sessionLabel(meta) }))) return;
   await request('session-delete', { id: meta.id });
-  if (meta.id === sessionId) await openSession(await request('blank-session'));
+  if (meta.id === sessionId) await showTabSession();
   else await refreshSessions();
 }
 
@@ -555,8 +592,11 @@ function applyLanguage(language) {
 
 // ---------- settings ----------
 
-const mainForm = createProviderForm($('mainProvider'), { request, getPresets: () => presets });
-const fallbackForm = createProviderForm($('fallbackProvider'), { request, getPresets: () => presets });
+const keyStore = createKeyStore();
+const mainForm = createProviderForm($('mainProvider'), { request, getPresets: () => presets, keyStore });
+const fallbackForm = createProviderForm($('fallbackProvider'), { request, getPresets: () => presets, keyStore });
+keyStore.register($('fastApiKey'), () => $('fastProvider').value);
+keyStore.register($('fastFallbackApiKey'), () => $('fastFallbackProvider').value);
 
 $('settingsBtn').addEventListener('click', () => toggleSettings(true));
 $('closeSettingsBtn').addEventListener('click', () => toggleSettings(false));
@@ -603,6 +643,7 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
 });
 
 function fillForm() {
+  keyStore.load(settings.keys);
   mainForm.fill(settings);
   fallbackForm.fill(settings.fallback);
   $('fallbackEnabled').checked = settings.fallback.enabled;
@@ -625,6 +666,7 @@ function readForm() {
   next.vision = $('vision').checked;
   next.allowJavascript = $('allowJavascript').checked;
   next.replyLanguage = { enabled: $('replyLangEnabled').checked, language: $('replyLang').value };
+  next.keys = keyStore.snapshot();
   return next;
 }
 
@@ -688,7 +730,7 @@ function readFastForm() {
   };
 }
 
-// Backups are decision providers only (TypeSafe or Vercel), so the base URL is the preset's.
+// Backups are decision providers only, so the base URL is the preset's.
 function readFastFallback() {
   const provider = $('fastFallbackProvider').value;
   const preset = fastPresets[provider] ?? {};
@@ -715,7 +757,7 @@ function syncFast() {
   $('fastFields').hidden = !$('fastEnabled').checked;
 }
 
-// TypeSafe has no model list endpoint; every OpenAI-compatible provider does.
+// TypeSafe has no model list; the other decision providers list theirs.
 function syncFastProvider() {
   syncListedPicker($('fastProvider').value, fastPickerEls(), fastModels);
 }
@@ -745,6 +787,7 @@ $('fastProvider').addEventListener('change', () => {
   $('fastBaseUrl').value = preset.baseUrl;
   $('fastModel').value = preset.model;
   $('fastMinProb').value = preset.minProb;
+  keyStore.show($('fastApiKey'), $('fastProvider').value);
   fastModels = [];
   syncFastProvider();
   loadFastModels();
@@ -759,6 +802,7 @@ $('fastFallbackEnabled').addEventListener('change', () => {
 });
 $('fastFallbackProvider').addEventListener('change', () => {
   $('fastFallbackModel').value = fastPresets[$('fastFallbackProvider').value].model;
+  keyStore.show($('fastFallbackApiKey'), $('fastFallbackProvider').value);
   fastFallbackModels = [];
   syncFastFallback();
   loadFastFallbackModels();

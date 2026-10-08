@@ -12,6 +12,8 @@ export const DEFAULT_GATE = {
   riskyMax: 0.3, // at or above this, never act without the LLM (and the user)
   doneMin: 0.8, // goal reached → hand over to the LLM to write the report
   maxStreak: 8, // consecutive fast steps before a mandatory LLM check-in
+  maxIdle: 3, // hand-overs in a row without a fast step before the layer pauses
+  pauseTurns: 3, // LLM turns the pause lasts, unless the page changes first
 };
 
 const MAX_TARGETS = 240; // Jev's Choice supports up to 255 options
@@ -172,6 +174,10 @@ export function createFastLayer({ config, browser, execute, task, ask = askJev }
   const recentKeys = [];
   let streak = 0;
   let failures = 0;
+  // Reading and comparing tasks hand most steps over; after a run of hand-overs the
+  // layer pauses so each LLM turn is not delayed by a Jev call it will not use.
+  let idle = 0;
+  let pause = null; // { turns, url }
 
   return {
     /** Records a step the LLM took so Jev sees it in LAST_ACTIONS next time. */
@@ -183,11 +189,14 @@ export function createFastLayer({ config, browser, execute, task, ask = askJev }
 
     async step({ signal } = {}) {
       if (failures >= 3) return { kind: 'off' };
+      if (pause && (await advancePause())) return { kind: 'paused' };
       let snapshot;
       try {
         snapshot = await browser.snapshot();
       } catch {
-        return { kind: 'escalate', reason: 'page cannot be read', snapshot: null, hints: '' };
+        // A new tab or chrome:// page is no web page yet: the LLM opens one, no notice needed.
+        const url = (await browser.currentTab().catch(() => null))?.url ?? '';
+        return { kind: 'escalate', reason: /^(https?|file):/.test(url) ? 'page cannot be read' : '', snapshot: null, hints: '' };
       }
       let answers;
       let usage = null;
@@ -203,6 +212,10 @@ export function createFastLayer({ config, browser, execute, task, ask = askJev }
 
       const hints = formatHints(answers, snapshot);
       const decision = decide({ answers, snapshot, textCandidates, gate, recentKeys });
+      if (decision.kind === 'escalate' && (idle += 1) >= gate.maxIdle) {
+        idle = 0;
+        pause = { turns: gate.pauseTurns, url: snapshot.url };
+      }
       if (decision.kind !== 'act') return { ...decision, snapshot, hints, usage };
       if (config.mode !== 'auto') return { kind: 'escalate', reason: '', snapshot, hints, usage };
       if (streak >= gate.maxStreak) {
@@ -212,11 +225,20 @@ export function createFastLayer({ config, browser, execute, task, ask = askJev }
 
       const result = await execute(decision.tool, decision.args);
       streak += 1;
+      idle = 0;
       recent.push(`${decision.label} on ${snapshot.url}`);
       recentKeys.push(decision.key);
       return { ...decision, kind: 'acted', result, usage };
     },
   };
+
+  /** Counts down one LLM turn of the pause and tells whether it still holds; a page change ends it early. */
+  async function advancePause() {
+    const url = (await browser.currentTab().catch(() => null))?.url;
+    pause.turns -= 1;
+    if (pause.turns < 0 || url !== pause.url) pause = null;
+    return Boolean(pause);
+  }
 }
 
 function pickNumbers(config) {

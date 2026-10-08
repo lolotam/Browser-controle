@@ -1,5 +1,7 @@
 // User settings persisted in chrome.storage.local.
 
+import { shareKeys } from './keys.js';
+
 // Main model and backup providers (both use this list). thinkingStyle 'none' sends
 // no reasoning parameter, for APIs whose models reject reasoning_effort; 'gemini'
 // offers no Off, because Gemini 3 thinking cannot be turned off.
@@ -31,12 +33,15 @@ export function chatModelsFor(presetId, models) {
   return excluded ? models.filter((m) => !excluded.test(m.id)) : models;
 }
 
-// Fast-layer providers serve decision models (Jev). OpenRouter has none.
+// Fast-layer providers serve decision models (Jev).
 export const FAST_PRESETS = {
   typesafe: { label: 'TypeSafe Jev', baseUrl: 'https://api.typesafe.ai', model: 'jev-latest', minProb: 0.6, decision: true },
   vercel: { label: 'Vercel AI Gateway', baseUrl: 'https://ai-gateway.vercel.sh/v1', model: 'typesafe-ai/jev', minProb: 0.6, decision: true },
   // Zen serves Jev on TypeSafe's own /v1/systemone API under its base URL.
   'opencode-zen': { label: 'OpenCode Zen', baseUrl: 'https://opencode.ai/zen', model: 'jev-1.13', minProb: 0.6, decision: true },
+  // OpenRouter serves Jev on /api/v1/systemone too, but leaves it out of /models,
+  // so its two ids are listed here.
+  openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api', model: 'typesafe/jev-1.13', minProb: 0.6, decision: true, models: ['typesafe/jev-1.13', '~typesafe/jev-latest'] },
 };
 
 export const DEFAULT_SETTINGS = {
@@ -60,6 +65,8 @@ export const DEFAULT_SETTINGS = {
   uiLanguage: 'auto',
   // Off: the agent replies in the language the task is written in.
   replyLanguage: { enabled: false, language: '' },
+  // One API key per provider for every slot (see shareKeys).
+  keys: {},
 };
 
 export async function loadSettings() {
@@ -74,7 +81,7 @@ export async function saveSettings(settings) {
 }
 
 export function mergeSettings(stored = {}) {
-  return {
+  return shareKeys({
     ...DEFAULT_SETTINGS,
     ...stored,
     chatgpt: { ...DEFAULT_SETTINGS.chatgpt, ...(stored.chatgpt ?? {}) },
@@ -91,5 +98,6 @@ export function mergeSettings(stored = {}) {
       chatgpt: { ...DEFAULT_SETTINGS.fallback.chatgpt, ...(stored.fallback?.chatgpt ?? {}) },
       compatible: { ...DEFAULT_SETTINGS.fallback.compatible, ...(stored.fallback?.compatible ?? {}) },
     },
-  };
+    keys: { ...(stored.keys ?? {}) },
+  });
 }

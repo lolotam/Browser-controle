@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildJevRequest, createFastLayer, decide, escalationMessage, extractTextCandidates, formatHints,
@@ -94,6 +94,46 @@ test('createFastLayer turns itself off after repeated Jev failures', async () =>
   });
   for (let i = 0; i < 3; i += 1) assert.match((await layer.step()).reason, /Fast layer unavailable/);
   assert.equal((await layer.step()).kind, 'off');
+});
+
+test('a new tab is handed over quietly; a web page that fails to load is reported', async () => {
+  const layerOn = (url) => createFastLayer({
+    config: { mode: 'auto' }, execute: async () => ({ output: '' }), task: 't', ask: async () => ({ answers: {} }),
+    browser: { snapshot: async () => { throw new Error('Cannot access a chrome:// URL'); }, currentTab: async () => ({ url }) },
+  });
+  assert.equal((await layerOn('chrome://newtab/').step()).reason, '');
+  assert.equal((await layerOn('https://www.amazon.eg/s?k=rtx').step()).reason, 'page cannot be read');
+});
+
+describe('pause after repeated hand-overs', () => {
+  const unsure = async () => ({ answers: answers({ operation: choice('click', { click: 0.4, think: 0.35 }) }) });
+  const setup = () => {
+    const tab = { url: snapshot.url };
+    let asked = 0;
+    const layer = createFastLayer({
+      config: { mode: 'auto' }, execute: async () => ({ output: '' }), task: 't',
+      ask: async () => { asked += 1; return unsure(); },
+      browser: { snapshot: async () => ({ ...snapshot, url: tab.url }), currentTab: async () => tab },
+    });
+    return { layer, tab, asked: () => asked };
+  };
+
+  test('three hand-overs in a row pause the layer for three LLM turns', async () => {
+    const { layer, asked } = setup();
+    for (let i = 0; i < 3; i += 1) assert.equal((await layer.step()).kind, 'escalate');
+    for (let i = 0; i < 3; i += 1) assert.equal((await layer.step()).kind, 'paused');
+    assert.equal(asked(), 3, 'no Jev call while paused');
+    assert.equal((await layer.step()).kind, 'escalate');
+    assert.equal(asked(), 4);
+  });
+
+  test('a page change ends the pause early', async () => {
+    const { layer, tab } = setup();
+    for (let i = 0; i < 3; i += 1) await layer.step();
+    assert.equal((await layer.step()).kind, 'paused');
+    tab.url = 'https://example.com/next';
+    assert.equal((await layer.step()).kind, 'escalate');
+  });
 });
 
 test('runAgent skips the LLM for fast steps and briefs it on hand-over', async () => {

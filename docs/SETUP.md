@@ -100,7 +100,7 @@ After you connect, the model list loads automatically from your account (`/backe
    - **JavaScript**: leave this off unless you need precise data extraction. It gives the model full script access to pages.
 4. Click **حفظ** (Save). The chip in the header shows `ChatGPT · <model> · <effort>`.
 
-Leave **⚡ الطبقة السريعة** (fast layer) off for now. It needs its own API key, for TypeSafe Jev, OpenRouter, Vercel AI Gateway or an OpenAI-compatible server, and is covered in the Arabic overview ([README.ar.md](README.ar.md)).
+Leave **⚡ الطبقة السريعة** (fast layer) off for now. It needs a key for one of its decision providers (TypeSafe Jev, Vercel AI Gateway, OpenCode Zen or OpenRouter); a key already entered for the same provider elsewhere in the settings is reused. It is covered in the Arabic overview ([README.ar.md](README.ar.md)).
 
 ---
 

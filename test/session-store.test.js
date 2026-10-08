@@ -26,6 +26,7 @@ test('a session keeps its transcript, its neutral log and its tab group', async 
   assert.deepEqual(loaded.transcript, [{ type: 'user', text: 'hi' }]);
   assert.equal(loaded.log.task, 'hi');
   assert.equal(loaded.groupId, 7);
+  assert.equal((await sessions.listSessions())[0].groupId, 7, 'the index names the group, so a restarted worker finds the session of a grouped tab');
 });
 
 test('the list is newest first and saving moves a session to the top', async () => {
