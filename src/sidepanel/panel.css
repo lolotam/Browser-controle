@@ -178,4 +178,5 @@ details summary { cursor: pointer; color: var(--text-2); }
 details[open] { display: flex; flex-direction: column; gap: 6px; }
 .fields { display: flex; flex-direction: column; gap: 10px; }
 .grow { flex: 1; min-width: 0; }
+.model-search { border-radius: 9999px; padding-inline: 12px; }
 .sticky-actions { position: sticky; bottom: 0; background: var(--bg); padding: 10px 0 12px; border-top: 1px solid var(--border); }

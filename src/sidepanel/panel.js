@@ -18,6 +18,7 @@ let fastPresets = {};
 let models = [];
 let fastModels = [];
 const CUSTOM_MODEL = '__custom__';
+const SEARCH_FROM = 12; // lists longer than this get a search box
 const loads = { main: 0, fast: 0 }; // newest request wins when lists load concurrently
 let authStatus = { connected: false };
 
@@ -359,7 +360,7 @@ function syncFastProvider() {
   const listed = $('fastProvider').value !== 'typesafe';
   $('fastModelsBtn').hidden = !listed;
   $('fastModelSelect').hidden = !listed;
-  if (listed) renderPicker($('fastModelSelect'), $('fastModel'), fastModels);
+  if (listed) renderPicker($('fastModelSelect'), $('fastModel'), fastModels, $('fastModelSearch'));
   else $('fastModel').hidden = false;
 }
 
@@ -374,6 +375,7 @@ $('fastProvider').addEventListener('change', () => {
   loadFastModels();
 });
 $('fastModelsBtn').addEventListener('click', () => loadFastModels(true));
+bindSearch($('fastModelSearch'), $('fastModelSelect'), () => fastModels, () => renderPicker($('fastModelSelect'), $('fastModel'), fastModels, $('fastModelSearch')));
 $('fastModelSelect').addEventListener('change', () => pickModel($('fastModelSelect'), $('fastModel')));
 
 async function loadFastModels(showErrors = false) {
@@ -384,7 +386,7 @@ async function loadFastModels(showErrors = false) {
     const list = await request('list-fast-models', { config });
     if (load !== loads.fast) return;
     fastModels = list;
-    renderPicker($('fastModelSelect'), $('fastModel'), fastModels);
+    renderPicker($('fastModelSelect'), $('fastModel'), fastModels, $('fastModelSearch'));
     $('fastTestResult').textContent = list.length ? '' : t('fast.noDecisionModels');
   } catch (err) {
     if (load === loads.fast && showErrors) $('fastTestResult').textContent = `✗ ${err.message}`;
@@ -458,6 +460,7 @@ $('modelSelect').addEventListener('change', () => {
 });
 $('modelInput').addEventListener('input', () => renderEfforts($('effort').value));
 $('refreshModelsBtn').addEventListener('click', () => loadModels(true));
+bindSearch($('modelSearch'), $('modelSelect'), () => models, renderModels);
 
 async function loadModels(showErrors = false) {
   const draft = readForm();
@@ -478,24 +481,47 @@ async function loadModels(showErrors = false) {
 }
 
 function renderModels() {
-  renderPicker($('modelSelect'), $('modelInput'), models);
+  renderPicker($('modelSelect'), $('modelInput'), models, $('modelSearch'));
 }
 
 /**
  * One dropdown per model field. The id input is the saved value; it only shows
  * for "Other model" or while no list is available, so the model is never shown twice.
  */
-function renderPicker(select, input, list) {
+function renderPicker(select, input, list, search) {
   const current = input.value.trim();
+  search.hidden = list.length <= SEARCH_FROM;
+  const shown = filterModels(list, search.value, current);
   const option = (m) => `<option value="${escapeAttr(m.id)}">${escapeAttr(m.name ?? m.id)}</option>`;
-  const hidden = list.filter((m) => m.hidden);
-  select.innerHTML = `<option value="" disabled>${escapeAttr(list.length ? t('model.pickCount', { n: list.length }) : t('model.pick'))}</option>`
-    + list.filter((m) => !m.hidden).map(option).join('')
+  const hidden = shown.filter((m) => m.hidden);
+  const count = shown.length === list.length ? list.length : `${shown.length} / ${list.length}`;
+  select.innerHTML = `<option value="" disabled>${escapeAttr(list.length ? t('model.pickCount', { n: count }) : t('model.pick'))}</option>`
+    + shown.filter((m) => !m.hidden).map(option).join('')
     + (hidden.length ? `<optgroup label="${escapeAttr(t('model.hiddenGroup'))}">${hidden.map(option).join('')}</optgroup>` : '')
     + `<option value="${CUSTOM_MODEL}">${escapeAttr(t('model.other'))}</option>`;
   const known = list.some((m) => m.id === current);
   select.value = known ? current : (current || !list.length ? CUSTOM_MODEL : '');
   input.hidden = select.value !== CUSTOM_MODEL;
+}
+
+// The selected model stays listed while searching, so filtering never changes the choice.
+function filterModels(list, query, current) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return list;
+  return list.filter((m) => m.id === current || words.every((w) => `${m.id} ${m.name ?? ''}`.toLowerCase().includes(w)));
+}
+
+/** Enter in a search box picks the first model that matches the query. */
+function bindSearch(search, select, getList, render) {
+  search.addEventListener('input', render);
+  search.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const [first] = filterModels(getList(), search.value, null);
+    if (!first) return;
+    select.value = first.id;
+    select.dispatchEvent(new Event('change'));
+  });
 }
 
 function pickModel(select, input) {

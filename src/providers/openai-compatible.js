@@ -10,10 +10,11 @@ const TRIMMED_OBSERVATION_CHARS = 400;
 const NON_CHAT_TYPES = new Set(['embedding', 'image', 'video', 'reranking', 'speech', 'transcription', 'realtime']);
 
 export async function listCompatibleModels(baseUrl, apiKey) {
-  const res = await fetch(`${trimSlash(baseUrl)}/models`, {
-    credentials: 'omit',
-    headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-  });
+  const url = `${trimSlash(baseUrl)}/models`;
+  let res = await fetch(url, { credentials: 'omit', headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {} });
+  // Vercel and OpenRouter publish their lists but reject an invalid key, so a
+  // typo or a key not entered yet must not hide the list.
+  if (apiKey && (res.status === 401 || res.status === 403)) res = await fetch(url, { credentials: 'omit', headers: {} });
   if (!res.ok) throw new Error(`Could not load models (HTTP ${res.status}). Type the model id manually.`);
   const body = await res.json();
   return (body.data ?? body.models ?? [])

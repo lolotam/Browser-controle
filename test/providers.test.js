@@ -111,3 +111,14 @@ test('model lists skip image, video and embedding models and flag decision model
     ['local-model', false],
   ]);
 });
+
+test('a public model list still loads when the key is missing or rejected', async () => {
+  const sent = [];
+  globalThis.fetch = async (url, init) => {
+    sent.push(init.headers.Authorization ?? null);
+    return init.headers.Authorization ? new Response('{"error":"bad key"}', { status: 401 }) : Response.json({ data: [{ id: 'typesafe-ai/jev', type: 'evaluation' }] });
+  };
+  const models = await listCompatibleModels('https://ai-gateway.vercel.sh/v1', 'typo-key');
+  assert.deepEqual(sent, ['Bearer typo-key', null]);
+  assert.deepEqual(models.map((m) => m.id), ['typesafe-ai/jev']);
+});
