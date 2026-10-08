@@ -122,3 +122,17 @@ test('a public model list still loads when the key is missing or rejected', asyn
   assert.deepEqual(sent, ['Bearer typo-key', null]);
   assert.deepEqual(models.map((m) => m.id), ['typesafe-ai/jev']);
 });
+
+test('settings saved before backups existed get disabled backups, and partial backups keep their fields', () => {
+  const old = mergeSettings({ provider: 'chatgpt', fast: { enabled: true, provider: 'vercel' } });
+  assert.equal(old.fallback.enabled, false);
+  assert.equal(old.fallback.compatible.preset, 'openrouter');
+  assert.equal(old.fast.fallback.enabled, false);
+  assert.equal(old.fast.fallback.provider, 'typesafe');
+
+  const partial = mergeSettings({ fallback: { enabled: true, compatible: { apiKey: 'or-key' } }, fast: { fallback: { enabled: true, apiKey: 'tk' } } });
+  assert.equal(partial.fallback.compatible.apiKey, 'or-key');
+  assert.equal(partial.fallback.compatible.baseUrl, 'https://openrouter.ai/api/v1');
+  assert.equal(partial.fast.fallback.apiKey, 'tk');
+  assert.equal(partial.fast.fallback.model, 'jev-latest');
+});
