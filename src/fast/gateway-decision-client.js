@@ -3,6 +3,8 @@
 // that yes/no questions are "boolean", answered as `probability`, and choices
 // come back without a confidence, which the gate needs, so it is derived here.
 
+import { isProbability } from './chat-judge-client.js';
+
 const REQUEST_TIMEOUT_MS = 8000;
 
 export async function askGatewayDecision({ baseUrl, apiKey, model, state, questions, signal }) {
@@ -33,11 +35,13 @@ function toGatewayQuestions(questions) {
   return Object.fromEntries(Object.entries(questions).map(([name, q]) => [name, q.type === 'noul' ? { ...q, type: 'boolean' } : q]));
 }
 
-/** Refusals and unknown answer types are left out, so the gate escalates those steps. */
+/** Refusals, unknown answer types and probabilities outside 0..1 are left out, so the gate escalates those steps. */
 function toJevAnswers(answers) {
   const out = {};
   for (const [name, a] of Object.entries(answers)) {
-    if (a.type === 'boolean') out[name] = { type: 'noul', noul: a.probability };
+    if (a.type === 'boolean') {
+      if (isProbability(a.probability)) out[name] = { type: 'noul', noul: a.probability };
+    }
     else if (a.type === 'choice') out[name] = { ...a, confidence: peak(a.probabilities ?? { [a.choice]: 1 }) };
   }
   return out;

@@ -58,3 +58,10 @@ test('non-JSON replies and HTTP errors are reported as failures', async () => {
   stubCompletion('', 429);
   await assert.rejects(askChatJudge({ baseUrl: 'https://gw.example/v1', apiKey: 'k', model: 'm', state: {}, questions }), /HTTP 429/);
 });
+
+// Review 2026-10 (Codex P1): clamping a negative risk score to 0 read malformed output as "safe".
+test('out-of-range yes/no answers are dropped so the gate escalates instead of treating them as safe', () => {
+  const answers = toAnswers(questions, { risky: -0.5, goal_done: 1.7 });
+  assert.equal(answers.risky, undefined);
+  assert.equal(answers.goal_done, undefined);
+});

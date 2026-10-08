@@ -80,10 +80,12 @@ function choiceAnswer(criteria, raw) {
   return { type: 'choice', choice, confidence: first - second, probabilities: Object.fromEntries(ranked) };
 }
 
+// A malformed probability is dropped, not clamped: clamping -0.5 to 0 would read
+// "is this step risky?" as "certainly not", and the gate treats a missing answer as risky.
 function noulAnswer(raw) {
-  return typeof raw === 'number' && Number.isFinite(raw) ? { type: 'noul', noul: clamp01(raw) } : null;
+  return isProbability(raw) ? { type: 'noul', noul: raw } : null;
 }
 
-function clamp01(x) {
-  return Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : 0;
+export function isProbability(x) {
+  return typeof x === 'number' && x >= 0 && x <= 1;
 }

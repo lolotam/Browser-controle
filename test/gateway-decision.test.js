@@ -49,6 +49,13 @@ test('Jev on Vercel is asked through the decision-model API with Jev-shaped answ
   assert.equal(answers.goal_done, undefined, 'a refusal must escalate, not count as an answer');
 });
 
+test('a decision answer outside 0..1 is dropped, never read as safe', async () => {
+  stubDecision({ answers: { risky: { type: 'boolean', probability: -0.2 }, goal_done: { type: 'boolean', probability: 'high' } } });
+  const { answers } = await askGatewayDecision({ baseUrl: 'https://ai-gateway.vercel.sh/v1', apiKey: 'vk', model: 'typesafe-ai/jev', state: {}, questions });
+  assert.equal(answers.risky, undefined);
+  assert.equal(answers.goal_done, undefined);
+});
+
 test('decision API errors are reported with their status', async () => {
   stubDecision(null, 403);
   await assert.rejects(
