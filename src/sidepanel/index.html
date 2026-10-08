@@ -217,6 +217,17 @@
       </div>
     </div>
 
+    <div class="card">
+      <strong data-i18n="backup.title"></strong>
+      <p class="muted" data-i18n="backup.desc"></p>
+      <div class="row">
+        <button type="button" id="exportBtn" data-i18n="backup.export"></button>
+        <button type="button" id="restoreBtn" data-i18n="backup.restore"></button>
+        <input type="file" id="restoreFile" accept="application/json,.json" hidden />
+      </div>
+      <small class="muted" id="backupResult"></small>
+    </div>
+
     <p class="error" id="settingsError" hidden></p>
     <div class="row end sticky-actions">
       <button type="button" id="closeSettingsBtn" data-i18n="common.back"></button>

@@ -202,4 +202,6 @@ details[open] { display: flex; flex-direction: column; gap: 6px; }
 #fastTestBtn[data-state="fail"] { background: var(--danger-bg); border-color: var(--danger); color: var(--danger); }
 #fastTestResult[data-state="ok"] { color: var(--success); }
 #fastTestResult[data-state="fail"] { color: var(--danger); }
+#backupResult[data-state="ok"] { color: var(--success); }
+#backupResult[data-state="fail"] { color: var(--danger); }
 .sticky-actions { position: sticky; bottom: 0; background: var(--bg); padding: 10px 0 12px; border-top: 1px solid var(--border); }

@@ -8,6 +8,7 @@ import { createToolExecutor, toolDefinitions } from '../agent/tools.js';
 import { BrowserController } from '../browser/controller.js';
 import { askWithBackup, fastClientFor } from '../fast/clients.js';
 import { createFastLayer } from '../fast/fast-layer.js';
+import { exportBackup, importBackup } from '../lib/backup.js';
 import { COMPATIBLE_PRESETS, FAST_PRESETS, loadSettings, saveSettings } from '../lib/settings.js';
 import * as chatgptAuth from '../providers/chatgpt-auth.js';
 import { ChatgptSession, listChatgptModels } from '../providers/chatgpt.js';
@@ -79,6 +80,10 @@ async function handleRequest(msg) {
       return saveSettings(msg.settings);
     case 'auth-status':
       return chatgptAuth.getAuthStatus();
+    case 'backup-export':
+      return exportBackup();
+    case 'backup-import':
+      return importBackup(msg.data);
     case 'auth-start':
       return startLogin();
     case 'auth-cancel':

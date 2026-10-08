@@ -517,6 +517,41 @@ $('fastTestBtn').addEventListener('click', async () => {
   }
 });
 
+$('exportBtn').addEventListener('click', async () => {
+  try {
+    const data = await request('backup-export');
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    Object.assign(document.createElement('a'), { href: url, download: `browser-agent-backup-${data.exportedAt.slice(0, 10)}.json` }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000); // revoking at once can cancel the download
+    showBackupStatus('ok', t('backup.exported'));
+  } catch (err) {
+    showBackupStatus('fail', `✗ ${err.message}`);
+  }
+});
+$('restoreBtn').addEventListener('click', () => $('restoreFile').click());
+$('restoreFile').addEventListener('change', async () => {
+  const [file] = $('restoreFile').files;
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    settings = await request('backup-import', { data });
+    fillForm();
+    updateChip();
+    showAuth(await request('auth-status'));
+    mainForm.loadModels();
+    showBackupStatus('ok', t('backup.restored'));
+  } catch (err) {
+    showBackupStatus('fail', `✗ ${err instanceof SyntaxError ? t('backup.notJson') : err.message}`);
+  } finally {
+    $('restoreFile').value = '';
+  }
+});
+
+function showBackupStatus(state, text) {
+  $('backupResult').dataset.state = state;
+  $('backupResult').textContent = text;
+}
+
 function currentProviderSettings(s = settings) {
   return s.provider === 'chatgpt' ? s.chatgpt : s.compatible;
 }

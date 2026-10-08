@@ -40,6 +40,10 @@ There is nothing to build. The folder that contains `manifest.json` (the repo ro
 
 When you pull new code later, return to `chrome://extensions` and click the **reload ↻** button on the extension card.
 
+**Keep your settings:** use **reload ↻**, not **Remove**. Chrome deletes an extension's stored data (settings, API keys, ChatGPT sign-in) when it is removed. Before removing it, open Settings → **Settings backup** → **Download backup**; after loading it again, use **Restore from file**. The backup file holds your keys, so keep it private.
+
+The manifest pins the extension ID to `bhoimdlegicacjkholpfcokajpiimbcn`, so it stays the same whichever folder you load it from. The first load after this change still starts empty, because the previous ID came from the folder path.
+
 ---
 
 ## 4. Connect your ChatGPT account
