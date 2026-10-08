@@ -21,10 +21,10 @@ const DEFINITIONS = [
   { name: 'screenshot', description: 'Take a screenshot of the visible viewport to see layout, images, canvases or anything the element list does not capture.', parameters: obj({}), vision: true },
   { name: 'history', description: 'Go back, forward, or reload the current tab.', parameters: obj({ action: { type: 'string', enum: ['back', 'forward', 'reload'] } }, ['action']) },
   { name: 'wait', description: 'Wait for the page to update (e.g. after starting a slow operation).', parameters: obj({ seconds: { type: 'number', description: '1-15' } }, ['seconds']) },
-  { name: 'list_tabs', description: 'List all open tabs with their ids.', parameters: obj({}) },
-  { name: 'switch_tab', description: 'Make another tab the one you control.', parameters: obj({ tab_id: int('Tab id from list_tabs') }, ['tab_id']) },
-  { name: 'open_tab', description: 'Open a URL in a new tab and control it.', parameters: obj({ url: str('Absolute URL') }, ['url']) },
-  { name: 'close_tab', description: 'Close a tab by id.', parameters: obj({ tab_id: int('Tab id') }, ['tab_id']) },
+  { name: 'list_tabs', description: 'List all open tabs with their ids. Tabs marked [yours] are in your session\'s tab group.', parameters: obj({}) },
+  { name: 'switch_tab', description: 'Control another tab. A tab outside your group joins it; a tab another running session uses is refused.', parameters: obj({ tab_id: int('Tab id from list_tabs') }, ['tab_id']) },
+  { name: 'open_tab', description: 'Open a URL in a new background tab in your group and control it.', parameters: obj({ url: str('Absolute URL') }, ['url']) },
+  { name: 'close_tab', description: 'Close one of your tabs by id.', parameters: obj({ tab_id: int('Tab id') }, ['tab_id']) },
   { name: 'run_javascript', description: 'Evaluate a JavaScript expression in the page and return its JSON-serialisable value. Use for precise data extraction.', parameters: obj({ expression: str('JavaScript expression; may be an async IIFE') }, ['expression']), javascript: true },
   { name: 'ask_user', description: 'Ask the user a question and wait for the answer. Required before purchases, payments, sending messages/emails/posts, deleting data, or entering credentials; also use when the task is ambiguous or you hit a login/CAPTCHA you cannot pass.', parameters: obj({ question: str('Question for the user') }, ['question']) },
   { name: 'done', description: 'Finish the task and give the user the final report in Markdown, in the user\'s language.', parameters: obj({ report: str('Final report: what was done and every piece of information collected, with source links'), success: { type: 'boolean', description: 'Whether the task was fully completed' } }, ['report', 'success']) },
@@ -128,19 +128,20 @@ export function createToolExecutor(browser, { askUser }) {
     list_tabs: async () => {
       const tabs = await chrome.tabs.query({});
       const current = (await browser.currentTab()).id;
-      return tabs.map((t) => `${t.id === current ? '* ' : '  '}tab_id=${t.id} ${t.active ? '(active) ' : ''}${t.title} — ${t.url}`).join('\n');
+      return tabs.map((t) => `${t.id === current ? '* ' : '  '}tab_id=${t.id} ${browser.ownsTab(t) ? '[yours] ' : ''}${t.active ? '(active) ' : ''}${t.title} — ${t.url}`).join('\n');
     },
     switch_tab: async ({ tab_id }) => {
       await browser.useTab(tab_id);
       return observe(`Switched to tab ${tab_id}.`);
     },
     open_tab: async ({ url }) => {
-      const tab = await chrome.tabs.create({ url: normalizeUrl(url), active: true });
-      browser.tabId = tab.id;
+      const tab = await browser.openTab(normalizeUrl(url));
       await browser.waitForLoad({ expectNavigation: true });
       return observe(`Opened new tab ${tab.id}.`);
     },
     close_tab: async ({ tab_id }) => {
+      const owner = browser.isTakenByOther(await chrome.tabs.get(tab_id));
+      if (owner) throw new Error(`Tab ${tab_id} belongs to session "${owner}".`);
       await chrome.tabs.remove(tab_id);
       return `Closed tab ${tab_id}.`;
     },

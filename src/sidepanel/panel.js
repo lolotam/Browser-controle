@@ -1,31 +1,57 @@
 import { renderMarkdown } from './markdown.js';
+import { currentLanguage, resolveLanguage, setLanguage, t } from './i18n.js';
+import { bindSearch, escapeAttr, pickModel, renderPicker } from './model-picker.js';
+import { createProviderForm } from './provider-form.js';
 
 const $ = (id) => document.getElementById(id);
 const request = async (type, payload = {}) => {
   const res = await chrome.runtime.sendMessage({ type, ...payload });
-  if (!res?.ok) throw new Error(res?.error ?? 'Request failed');
+  if (!res?.ok) throw new Error(res?.error ?? t('err.request'));
   return res.result;
 };
 
-const EFFORT_LABELS = { '': 'افتراضي الموديل', off: 'بدون تفكير', on: 'تفكير مفعّل', minimal: 'minimal', none: 'none', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max', ultra: 'ultra' };
-const FALLBACK_EFFORTS = { chatgpt: ['low', 'medium', 'high', 'xhigh'], reasoning_effort: ['off', 'low', 'medium', 'high'], glm: ['on', 'off'] };
-
-const ui = { running: false, question: null, liveText: null, liveReasoning: null, steps: new Map() };
+const ui = { running: false, question: null, liveText: null, liveReasoning: null, trace: null, steps: new Map(), replayed: false, notices: [] };
+const MAX_NOTICES = 3;
 let settings = null;
 let presets = {};
-let models = [];
+let fastPresets = {};
+let fastModels = [];
+let fastFallbackModels = [];
+const loads = { fast: 0, fastFallback: 0 }; // newest request wins when lists load concurrently
+let authStatus = { connected: false };
+
+setLanguage(resolveLanguage('auto', chrome.i18n.getUILanguage()));
 
 // ---------- chat ----------
 
-const port = chrome.runtime.connect({ name: 'panel' });
-port.onMessage.addListener(onEvent);
+// Each window's panel shows one session; the port name tells the worker which.
+// The worker can be stopped while the panel stays open, which closes the port,
+// so it reconnects lazily on the next message instead of looping on restarts.
+let port = null;
+let sessionId = null;
+let windowId = null;
+let sessionList = [];
+
+function connect() {
+  port = chrome.runtime.connect({ name: `panel:${sessionId}` });
+  port.onMessage.addListener(onEvent);
+  port.onDisconnect.addListener(() => { port = null; });
+}
+
+function send(message) {
+  if (!port) connect();
+  port.postMessage(message);
+}
 
 function onEvent(event) {
   switch (event.type) {
     case 'replay':
-      $('messages').querySelectorAll('.msg, .step, .handoff').forEach((n) => n.remove());
-      ui.steps.clear();
-      event.events.forEach(onEvent);
+      // A restarted worker replays an empty transcript; keep what is on screen.
+      if (!ui.replayed) {
+        clearMessages();
+        event.events.forEach(onEvent);
+        ui.replayed = true;
+      }
       setRunning(event.running);
       if (event.question) setQuestion(event.question);
       break;
@@ -75,19 +101,31 @@ function onEvent(event) {
       ui.liveText?.remove();
       ui.liveText = null;
       const node = add(`msg final${event.success ? '' : ' partial'}`, '');
-      node.innerHTML = `<h3>${event.success ? '✅ التقرير النهائي' : '⚠️ تقرير (المهمة لم تكتمل)'}</h3>${renderMarkdown(event.report)}`;
+      node.innerHTML = renderMarkdown(event.report);
+      const heading = document.createElement('h3');
+      heading.textContent = t(event.success ? 'report.final' : 'report.partial');
+      node.prepend(heading);
       break;
     }
     case 'error':
       add('msg error', event.message);
       break;
     case 'stopped':
-      add('msg error', 'تم إيقاف المهمة.');
+      add('msg error', t('msg.stopped'));
       break;
-    case 'auth-changed':
-      showAuth(event.status);
-      $('deviceBox').hidden = true;
-      loadModels();
+    case 'notice':
+      ui.notices.push(event);
+      renderNotices();
+      break;
+    case 'notice-dismissed':
+      ui.notices = ui.notices.filter((n) => n.id !== event.id);
+      renderNotices();
+      break;
+    case 'sessions-changed':
+      refreshSessions();
+      break;
+    case 'session-missing':
+      request('window-session', { windowId }).then(openSession);
       break;
     case 'auth-error':
       $('deviceBox').hidden = true;
@@ -100,6 +138,7 @@ function onEvent(event) {
 
 function add(className, text) {
   $('emptyState').hidden = true;
+  ui.trace = null;
   const node = document.createElement('div');
   node.className = className;
   node.dir = 'auto';
@@ -109,23 +148,61 @@ function add(className, text) {
   return node;
 }
 
+/** Consecutive tool steps share one trace block. */
 function addStep({ step, name, args, fast }) {
   $('emptyState').hidden = true;
+  if (!ui.trace) {
+    ui.trace = document.createElement('div');
+    ui.trace.className = 'trace';
+    $('messages').append(ui.trace);
+  }
   const row = document.createElement('div');
   row.className = fast ? 'step fast' : 'step';
   const compact = JSON.stringify(args ?? {}).replace(/^\{|\}$/g, '');
   row.innerHTML = '<span class="mark">…</span><span class="name"></span><span class="args"></span>';
   row.querySelector('.name').textContent = `${step}. ${name}`;
   row.querySelector('.args').textContent = compact;
-  $('messages').append(row);
+  ui.trace.append(row);
   ui.steps.set(step + name, row);
   scrollDown();
 }
 
+function clearMessages() {
+  $('messages').querySelectorAll('.msg, .trace, .handoff').forEach((n) => n.remove());
+  ui.steps.clear();
+  ui.trace = null;
+  ui.notices = [];
+  renderNotices();
+}
+
+const NOTICE_TEXT = { switched: 'notice.switched', 'both-failed': 'notice.bothFailed', 'fast-switched': 'notice.fastSwitched' };
+
+/** Newest first; the full provider error is in the tooltip. */
+function renderNotices() {
+  $('notices').replaceChildren(...ui.notices.slice(-MAX_NOTICES).reverse().map((notice) => {
+    const reason = notice.code && notice.code !== 'other' ? t(`failure.${notice.code}`) : notice.reason;
+    const row = document.createElement('div');
+    row.className = `notice ${notice.level}`;
+    row.title = notice.detail ?? '';
+    row.dir = 'auto';
+    const text = document.createElement('span');
+    text.textContent = `⚠ ${t(NOTICE_TEXT[notice.kind] ?? 'notice.switched', { from: notice.from ?? '', to: notice.to ?? '', reason })}`;
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'ghost icon';
+    close.textContent = '×';
+    close.setAttribute('aria-label', t('notice.dismiss'));
+    close.addEventListener('click', () => send({ type: 'dismiss-notice', id: notice.id }));
+    row.append(text, close);
+    return row;
+  }));
+}
+
 function setQuestion(question) {
   ui.question = question;
-  add('msg ask', `❓ ${question}`);
-  $('hint').textContent = 'الوكيل مستني ردك…';
+  add('msg ask', question);
+  $('hint').textContent = t('status.waiting');
+  $('sendBtn').hidden = false;
   $('input').focus();
 }
 
@@ -133,11 +210,12 @@ function setRunning(running) {
   ui.running = running;
   $('statusDot').classList.toggle('running', running);
   $('stopBtn').hidden = !running;
+  $('sendBtn').hidden = running && !ui.question;
   if (!running) {
     ui.question = null;
     $('hint').textContent = '';
   } else if (!ui.question) {
-    $('hint').textContent = 'جاري التنفيذ…';
+    $('hint').textContent = t('status.running');
   }
 }
 
@@ -151,14 +229,15 @@ $('composer').addEventListener('submit', (e) => {
   const text = $('input').value.trim();
   if (!text) return;
   if (ui.question) {
-    port.postMessage({ type: 'answer', text });
+    send({ type: 'answer', text });
     ui.question = null;
-    $('hint').textContent = 'جاري التنفيذ…';
+    $('hint').textContent = t('status.running');
+    $('sendBtn').hidden = true;
   } else if (ui.running) {
-    $('hint').textContent = 'استنى المهمة الحالية تخلص أو اضغط إيقاف.';
+    $('hint').textContent = t('status.busy');
     return;
   } else {
-    port.postMessage({ type: 'run', text });
+    send({ type: 'run', text });
   }
   $('input').value = '';
 });
@@ -168,18 +247,184 @@ $('input').addEventListener('keydown', (e) => {
     $('composer').requestSubmit();
   }
 });
-$('stopBtn').addEventListener('click', () => port.postMessage({ type: 'stop' }));
-$('newChatBtn').addEventListener('click', () => {
-  port.postMessage({ type: 'new-chat' });
-  $('messages').querySelectorAll('.msg, .step, .handoff').forEach((n) => n.remove());
-  $('emptyState').hidden = false;
+$('stopBtn').addEventListener('click', () => send({ type: 'stop' }));
+$('newChatBtn').addEventListener('click', async () => {
+  const meta = await request('session-create', { windowId });
+  await openSession(meta.id);
 });
 document.querySelectorAll('.examples li').forEach((li) => li.addEventListener('click', () => {
   $('input').value = li.textContent;
   $('input').focus();
 }));
 
+// ---------- sessions ----------
+
+async function startSessions() {
+  windowId = (await chrome.windows.getCurrent()).id;
+  sessionId = await request('window-session', { windowId });
+  connect();
+  await refreshSessions();
+}
+
+async function openSession(id) {
+  closeSessionMenu();
+  if (id === sessionId && port) return;
+  port?.disconnect();
+  port = null;
+  sessionId = id;
+  ui.replayed = false;
+  ui.running = false;
+  clearMessages();
+  $('emptyState').hidden = false;
+  await request('session-open', { windowId, id });
+  connect();
+  renderSessionTitle();
+}
+
+async function refreshSessions() {
+  sessionList = await request('sessions-list');
+  renderSessionTitle();
+  if (!$('sessionMenu').hidden) renderSessionList();
+}
+
+function sessionLabel(meta) {
+  return meta?.title || t('session.untitled');
+}
+
+function renderSessionTitle() {
+  $('sessionTitle').textContent = sessionLabel(sessionList.find((s) => s.id === sessionId));
+}
+
+function renderSessionList() {
+  const query = $('sessionSearch').value.trim().toLowerCase();
+  const shown = sessionList.filter((s) => !query || sessionLabel(s).toLowerCase().includes(query));
+  $('sessionList').replaceChildren(...shown.map(sessionRow));
+}
+
+function sessionRow(meta) {
+  const row = document.createElement('li');
+  row.className = `session-item${meta.id === sessionId ? ' active' : ''}`;
+  row.setAttribute('role', 'option');
+  row.setAttribute('aria-selected', String(meta.id === sessionId));
+  const dot = document.createElement('span');
+  dot.className = `dot${meta.running ? ' running' : ''}`;
+  dot.title = meta.running ? t('session.running') : '';
+  const title = document.createElement('button');
+  title.type = 'button';
+  title.className = 'session-open';
+  // <bdi> keeps an English title readable in the Arabic list without flipping the row's alignment.
+  title.append(Object.assign(document.createElement('bdi'), { textContent: sessionLabel(meta) }));
+  title.addEventListener('click', () => openSession(meta.id));
+  const rename = iconButton(ICONS.rename, t('session.rename'), () => startRename(row, title, meta));
+  const remove = iconButton(ICONS.remove, t('session.delete'), () => deleteSessionAsked(meta));
+  row.append(dot, title, rename, remove);
+  return row;
+}
+
+const ICONS = {
+  rename: 'M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4',
+  remove: 'M5 7h14M10 11v6M14 11v6M7 7l1 12h8l1-12M9 7V4h6v3',
+};
+
+function iconButton(path, label, onClick) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'ghost icon';
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  const shape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  shape.setAttribute('d', path);
+  svg.append(shape);
+  button.append(svg);
+  button.title = label;
+  button.setAttribute('aria-label', label);
+  button.addEventListener('click', onClick);
+  return button;
+}
+
+function startRename(row, title, meta) {
+  const input = document.createElement('input');
+  input.value = meta.title;
+  input.dir = 'auto';
+  input.className = 'session-rename';
+  let done = false;
+  const finish = async (save) => {
+    if (done) return;
+    done = true;
+    if (save && input.value.trim() && input.value.trim() !== meta.title) await request('session-rename', { id: meta.id, title: input.value });
+    await refreshSessions();
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') finish(true);
+    else if (e.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+  title.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
+async function deleteSessionAsked(meta) {
+  if (!window.confirm(t('session.confirmDelete', { title: sessionLabel(meta) }))) return;
+  await request('session-delete', { id: meta.id });
+  if (meta.id === sessionId) await openSession(await request('window-session', { windowId }));
+  else await refreshSessions();
+}
+
+function toggleSessionMenu() {
+  if ($('sessionMenu').hidden) {
+    $('sessionMenu').hidden = false;
+    $('sessionBtn').setAttribute('aria-expanded', 'true');
+    $('sessionSearch').value = '';
+    renderSessionList();
+    refreshSessions();
+    $('sessionSearch').focus();
+  } else {
+    closeSessionMenu();
+  }
+}
+
+function closeSessionMenu() {
+  $('sessionMenu').hidden = true;
+  $('sessionBtn').setAttribute('aria-expanded', 'false');
+}
+
+$('sessionBtn').addEventListener('click', toggleSessionMenu);
+$('sessionSearch').addEventListener('input', renderSessionList);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('sessionMenu').hidden) closeSessionMenu();
+});
+document.addEventListener('click', (e) => {
+  if (!$('sessionMenu').hidden && !$('sessionMenu').contains(e.target) && !$('sessionBtn').contains(e.target)) closeSessionMenu();
+});
+
+// ---------- language ----------
+
+$('langBtn').addEventListener('click', async () => {
+  const next = currentLanguage() === 'ar' ? 'en' : 'ar';
+  applyLanguage(next);
+  settings = await request('save-settings', { settings: { ...settings, uiLanguage: next } });
+});
+
+/** Static text is retranslated by setLanguage; text this file renders is redrawn here. */
+function applyLanguage(language) {
+  setLanguage(language);
+  if (!settings) return;
+  showAuth(authStatus);
+  updateChip();
+  mainForm.rerender();
+  fallbackForm.rerender();
+  renderNotices();
+  renderSessionTitle();
+  syncFastProvider();
+  syncFastFallback();
+}
+
 // ---------- settings ----------
+
+const mainForm = createProviderForm($('mainProvider'), { request, getPresets: () => presets });
+const fallbackForm = createProviderForm($('fallbackProvider'), { request, getPresets: () => presets });
 
 $('settingsBtn').addEventListener('click', () => toggleSettings(true));
 $('closeSettingsBtn').addEventListener('click', () => toggleSettings(false));
@@ -188,51 +433,57 @@ function toggleSettings(open) {
   $('settingsView').hidden = !open;
   $('chatView').hidden = open;
   $('settingsError').hidden = true;
+  if (open) {
+    mainForm.loadModels();
+    if ($('fallbackEnabled').checked) fallbackForm.loadModels();
+    loadFastModels();
+    loadFastFallbackModels();
+  }
 }
 
 async function init() {
   const data = await request('get-settings');
   settings = data.settings;
   presets = data.presets;
-  $('preset').innerHTML = Object.entries(presets).map(([id, p]) => `<option value="${id}">${p.label}</option>`).join('');
+  fastPresets = data.fastPresets;
+  setLanguage(resolveLanguage(settings.uiLanguage, chrome.i18n.getUILanguage()));
+  $('fastProvider').innerHTML = Object.entries(fastPresets).map(([id, p]) => `<option value="${id}">${escapeAttr(p.label)}</option>`).join('');
+  $('fastFallbackProvider').innerHTML = Object.entries(fastPresets).filter(([, p]) => p.decision)
+    .map(([id, p]) => `<option value="${id}">${escapeAttr(p.label)}</option>`).join('');
   fillForm();
   showAuth(await request('auth-status'));
   updateChip();
   if (!activeModel()) toggleSettings(true);
-  loadModels();
+  mainForm.loadModels();
+  loadFastModels();
 }
 
+// Tokens land in storage even when the worker that polled for them was restarted
+// and its port to this panel is gone, so storage is the reliable sign-in signal.
+chrome.storage.onChanged.addListener(async (changes, area) => {
+  if (area !== 'local' || !changes.chatgptAuth) return;
+  showAuth(await request('auth-status'));
+  if (changes.chatgptAuth.newValue) {
+    $('deviceBox').hidden = true;
+    mainForm.loadModels();
+  }
+});
+
 function fillForm() {
-  $('provider').value = settings.provider;
-  $('preset').value = settings.compatible.preset;
-  $('baseUrl').value = settings.compatible.baseUrl;
-  $('apiKey').value = settings.compatible.apiKey;
+  mainForm.fill(settings);
+  fallbackForm.fill(settings.fallback);
+  $('fallbackEnabled').checked = settings.fallback.enabled;
+  syncFallback();
   $('maxSteps').value = settings.maxSteps;
   $('vision').checked = settings.vision;
   $('allowJavascript').checked = settings.allowJavascript;
-  $('modelInput').value = activeModel();
-  $('fastEnabled').checked = settings.fast.enabled;
-  $('fastMode').value = settings.fast.mode;
-  $('fastApiKey').value = settings.fast.apiKey;
-  $('fastModel').value = settings.fast.model;
-  $('fastBaseUrl').value = settings.fast.baseUrl;
-  $('fastMinProb').value = settings.fast.minProb;
-  $('fastRiskyMax').value = settings.fast.riskyMax;
-  syncFast();
-  syncSections();
-  renderEfforts(currentProviderSettings().effort);
+  fillFastForm(settings.fast);
 }
 
 function readForm() {
-  const provider = $('provider').value;
   const next = structuredClone(settings);
-  next.provider = provider;
-  next.compatible.preset = $('preset').value;
-  next.compatible.baseUrl = $('baseUrl').value.trim();
-  next.compatible.apiKey = $('apiKey').value.trim();
-  const target = provider === 'chatgpt' ? next.chatgpt : next.compatible;
-  target.model = $('modelInput').value.trim();
-  target.effort = $('effort').value;
+  Object.assign(next, mainForm.read());
+  next.fallback = { ...fallbackForm.read(), enabled: $('fallbackEnabled').checked };
   next.fast = readFastForm();
   next.maxSteps = Number($('maxSteps').value) || 40;
   next.vision = $('vision').checked;
@@ -240,33 +491,216 @@ function readForm() {
   return next;
 }
 
+function syncFallback() {
+  $('fallbackProvider').hidden = !$('fallbackEnabled').checked;
+}
+
+$('fallbackEnabled').addEventListener('change', () => {
+  syncFallback();
+  if ($('fallbackEnabled').checked) fallbackForm.loadModels();
+});
+
+function fillFastForm(fast) {
+  $('fastEnabled').checked = fast.enabled;
+  $('fastProvider').value = fast.provider;
+  $('fastMode').value = fast.mode;
+  $('fastApiKey').value = fast.apiKey;
+  $('fastModel').value = fast.model;
+  $('fastBaseUrl').value = fast.baseUrl;
+  $('fastMinProb').value = fast.minProb;
+  $('fastRiskyMax').value = fast.riskyMax;
+  $('fastFallbackEnabled').checked = fast.fallback.enabled;
+  $('fastFallbackProvider').value = fast.fallback.provider;
+  $('fastFallbackApiKey').value = fast.fallback.apiKey;
+  $('fastFallbackModel').value = fast.fallback.model;
+  syncFast();
+  syncFastProvider();
+  syncFastFallback();
+}
+
 function readFastForm() {
+  const provider = $('fastProvider').value;
+  const preset = fastPresets[provider] ?? {};
+  const model = $('fastModel').value.trim() || preset.model;
   return {
     enabled: $('fastEnabled').checked,
     mode: $('fastMode').value,
+    provider,
+    decision: isDecisionModel(provider, model),
     apiKey: $('fastApiKey').value.trim(),
-    model: $('fastModel').value.trim() || 'jev-latest',
-    baseUrl: $('fastBaseUrl').value.trim() || 'https://api.typesafe.ai',
-    minProb: Number($('fastMinProb').value) || 0.6,
+    model,
+    baseUrl: $('fastBaseUrl').value.trim() || preset.baseUrl,
+    minProb: Number($('fastMinProb').value) || preset.minProb,
     riskyMax: Number($('fastRiskyMax').value) || 0.3,
+    fallback: readFastFallback(),
   };
+}
+
+// Backups are decision providers only (TypeSafe or Vercel), so the base URL is the preset's.
+function readFastFallback() {
+  const provider = $('fastFallbackProvider').value;
+  const preset = fastPresets[provider] ?? {};
+  return {
+    enabled: $('fastFallbackEnabled').checked,
+    provider,
+    baseUrl: preset.baseUrl,
+    apiKey: $('fastFallbackApiKey').value.trim(),
+    model: $('fastFallbackModel').value.trim() || preset.model,
+    decision: true,
+  };
+}
+
+// The fast list only holds decision models; a typed id counts as one when it is
+// the preset's default (list not loaded yet) or was saved as one before.
+function isDecisionModel(provider, model) {
+  if (fastModels.some((m) => m.id === model)) return true;
+  const preset = fastPresets[provider] ?? {};
+  if (model === preset.model) return Boolean(preset.decision);
+  return settings.fast.provider === provider && settings.fast.model === model && Boolean(settings.fast.decision);
 }
 
 function syncFast() {
   $('fastFields').hidden = !$('fastEnabled').checked;
 }
 
+// TypeSafe has no model list endpoint; every OpenAI-compatible provider does.
+function syncFastProvider() {
+  syncListedPicker($('fastProvider').value, fastPickerEls(), fastModels);
+}
+
+function syncFastFallback() {
+  $('fastFallbackFields').hidden = !$('fastFallbackEnabled').checked;
+  syncListedPicker($('fastFallbackProvider').value, fastFallbackPickerEls(), fastFallbackModels);
+}
+
+const fastPickerEls = () => ({ select: $('fastModelSelect'), input: $('fastModel'), search: $('fastModelSearch'), refresh: $('fastModelsBtn') });
+const fastFallbackPickerEls = () => ({ select: $('fastFallbackModelSelect'), input: $('fastFallbackModel'), search: $('fastFallbackModelSearch'), refresh: $('fastFallbackModelsBtn') });
+
+function syncListedPicker(provider, els, list) {
+  const listed = provider !== 'typesafe';
+  els.refresh.hidden = !listed;
+  els.select.hidden = !listed;
+  if (listed) renderPicker(els.select, els.input, list, els.search);
+  else {
+    els.input.hidden = false;
+    els.search.hidden = true;
+  }
+}
+
 $('fastEnabled').addEventListener('change', syncFast);
+$('fastProvider').addEventListener('change', () => {
+  const preset = fastPresets[$('fastProvider').value];
+  $('fastBaseUrl').value = preset.baseUrl;
+  $('fastModel').value = preset.model;
+  $('fastMinProb').value = preset.minProb;
+  fastModels = [];
+  syncFastProvider();
+  loadFastModels();
+});
+$('fastModelsBtn').addEventListener('click', () => loadFastModels(true));
+bindSearch($('fastModelSearch'), $('fastModelSelect'), () => fastModels, syncFastProvider);
+$('fastModelSelect').addEventListener('change', () => pickModel($('fastModelSelect'), $('fastModel')));
+
+$('fastFallbackEnabled').addEventListener('change', () => {
+  syncFastFallback();
+  loadFastFallbackModels();
+});
+$('fastFallbackProvider').addEventListener('change', () => {
+  $('fastFallbackModel').value = fastPresets[$('fastFallbackProvider').value].model;
+  fastFallbackModels = [];
+  syncFastFallback();
+  loadFastFallbackModels();
+});
+$('fastFallbackModelsBtn').addEventListener('click', () => loadFastFallbackModels(true));
+bindSearch($('fastFallbackModelSearch'), $('fastFallbackModelSelect'), () => fastFallbackModels, syncFastFallback);
+$('fastFallbackModelSelect').addEventListener('change', () => pickModel($('fastFallbackModelSelect'), $('fastFallbackModel')));
+
+async function loadFastModels(showErrors = false) {
+  const config = readFastForm();
+  if (!config.enabled || config.provider === 'typesafe') return;
+  const load = ++loads.fast;
+  try {
+    const list = await request('list-fast-models', { config });
+    if (load !== loads.fast) return;
+    fastModels = list;
+    syncFastProvider();
+    showFastStatus('', list.length ? '' : t('fast.noDecisionModels'));
+  } catch (err) {
+    if (load === loads.fast && showErrors) showFastStatus('fail', `✗ ${err.message}`);
+  }
+}
+
+async function loadFastFallbackModels(showErrors = false) {
+  const config = readFastFallback();
+  if (!$('fastEnabled').checked || !config.enabled || config.provider === 'typesafe') return;
+  const load = ++loads.fastFallback;
+  try {
+    const list = await request('list-fast-models', { config });
+    if (load !== loads.fastFallback) return;
+    fastFallbackModels = list;
+    syncFastFallback();
+  } catch (err) {
+    if (load === loads.fastFallback && showErrors) showFastStatus('fail', `✗ ${err.message}`);
+  }
+}
+
+/** state: 'ok' (green), 'fail' (red) or '' (neutral); the button and the message share it. */
+function showFastStatus(state, text) {
+  $('fastTestBtn').dataset.state = state;
+  $('fastTestResult').dataset.state = state;
+  $('fastTestResult').textContent = text;
+}
+
+// A pass or fail describes the settings that were tested; editing them makes it stale.
+['input', 'change'].forEach((type) => $('fastFields').addEventListener(type, (e) => {
+  if (e.target !== $('fastTestBtn') && $('fastTestBtn').dataset.state) showFastStatus('', '');
+}));
+
 $('fastTestBtn').addEventListener('click', async () => {
-  $('fastTestResult').textContent = 'جاري الاختبار…';
+  showFastStatus('', t('fast.testing'));
   const started = performance.now();
   try {
-    const { model } = await request('jev-test', { config: readFastForm() });
-    $('fastTestResult').textContent = `✓ شغال (${model}) في ${Math.round(performance.now() - started)}ms`;
+    const { model } = await request('fast-test', { config: readFastForm() });
+    showFastStatus('ok', t('fast.testOk', { model, ms: Math.round(performance.now() - started) }));
   } catch (err) {
-    $('fastTestResult').textContent = `✗ ${err.message}`;
+    showFastStatus('fail', `✗ ${err.message}`);
   }
 });
+
+$('exportBtn').addEventListener('click', async () => {
+  try {
+    const data = await request('backup-export');
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    Object.assign(document.createElement('a'), { href: url, download: `browser-agent-backup-${data.exportedAt.slice(0, 10)}.json` }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000); // revoking at once can cancel the download
+    showBackupStatus('ok', t('backup.exported'));
+  } catch (err) {
+    showBackupStatus('fail', `✗ ${err.message}`);
+  }
+});
+$('restoreBtn').addEventListener('click', () => $('restoreFile').click());
+$('restoreFile').addEventListener('change', async () => {
+  const [file] = $('restoreFile').files;
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    settings = await request('backup-import', { data });
+    fillForm();
+    updateChip();
+    showAuth(await request('auth-status'));
+    mainForm.loadModels();
+    showBackupStatus('ok', t('backup.restored'));
+  } catch (err) {
+    showBackupStatus('fail', `✗ ${err instanceof SyntaxError ? t('backup.notJson') : err.message}`);
+  } finally {
+    $('restoreFile').value = '';
+  }
+});
+
+function showBackupStatus(state, text) {
+  $('backupResult').dataset.state = state;
+  $('backupResult').textContent = text;
+}
 
 function currentProviderSettings(s = settings) {
   return s.provider === 'chatgpt' ? s.chatgpt : s.compatible;
@@ -276,98 +710,11 @@ function activeModel() {
   return currentProviderSettings().model;
 }
 
-function syncSections() {
-  const isChatgpt = $('provider').value === 'chatgpt';
-  $('chatgptSection').hidden = !isChatgpt;
-  $('compatibleSection').hidden = isChatgpt;
-}
-
-$('provider').addEventListener('change', () => {
-  settings = readFormKeepingModel();
-  $('modelInput').value = activeModel();
-  $('fastEnabled').checked = settings.fast.enabled;
-  $('fastMode').value = settings.fast.mode;
-  $('fastApiKey').value = settings.fast.apiKey;
-  $('fastModel').value = settings.fast.model;
-  $('fastBaseUrl').value = settings.fast.baseUrl;
-  $('fastMinProb').value = settings.fast.minProb;
-  $('fastRiskyMax').value = settings.fast.riskyMax;
-  syncFast();
-  syncSections();
-  models = [];
-  renderModels();
-  renderEfforts(currentProviderSettings().effort);
-  loadModels();
-});
-
-// Switching provider must not copy one provider's model id into the other.
-function readFormKeepingModel() {
-  const next = readForm();
-  const prevProvider = settings.provider;
-  const prevTarget = prevProvider === 'chatgpt' ? next.chatgpt : next.compatible;
-  const newTarget = next.provider === 'chatgpt' ? next.chatgpt : next.compatible;
-  if (prevProvider !== next.provider) {
-    prevTarget.model = $('modelInput').value.trim();
-    prevTarget.effort = $('effort').value;
-    newTarget.model = (next.provider === 'chatgpt' ? settings.chatgpt : settings.compatible).model;
-    newTarget.effort = (next.provider === 'chatgpt' ? settings.chatgpt : settings.compatible).effort;
-  }
-  return next;
-}
-
-$('preset').addEventListener('change', () => {
-  const preset = presets[$('preset').value];
-  $('baseUrl').value = preset.baseUrl;
-  $('modelInput').value = preset.model;
-  renderEfforts('');
-});
-
-$('modelSelect').addEventListener('change', () => {
-  $('modelInput').value = $('modelSelect').value;
-  const model = models.find((m) => m.id === $('modelSelect').value);
-  renderEfforts(model?.defaultEffort ?? '');
-});
-$('modelInput').addEventListener('input', () => renderEfforts($('effort').value));
-$('refreshModelsBtn').addEventListener('click', () => loadModels(true));
-
-async function loadModels(showErrors = false) {
-  const draft = readForm();
-  if (draft.provider === 'chatgpt' && !(await request('auth-status')).connected) return;
-  $('modelInfo').textContent = 'جاري تحميل الموديلات…';
-  try {
-    models = await request('list-models', { settings: draft });
-    renderModels();
-    if (!$('modelInput').value && models[0]) {
-      $('modelInput').value = models[0].id;
-      renderEfforts(models[0].defaultEffort ?? '');
-    }
-    $('modelInfo').textContent = `${models.length} موديل متاح`;
-  } catch (err) {
-    $('modelInfo').textContent = showErrors ? err.message : 'اكتب اسم الموديل يدويًا أو اضغط ↻';
-  }
-}
-
-function renderModels() {
-  const current = $('modelInput').value;
-  $('modelSelect').innerHTML = '<option value="">— اختر من القائمة —</option>'
-    + models.map((m) => `<option value="${escapeAttr(m.id)}">${escapeAttr(m.name)}</option>`).join('');
-  if (models.some((m) => m.id === current)) $('modelSelect').value = current;
-}
-
-function renderEfforts(selected) {
-  const provider = $('provider').value;
-  const model = models.find((m) => m.id === $('modelInput').value.trim());
-  const style = provider === 'chatgpt' ? 'chatgpt' : presets[$('preset').value]?.thinkingStyle ?? 'reasoning_effort';
-  const levels = model?.efforts?.length ? model.efforts : FALLBACK_EFFORTS[style];
-  const options = ['', ...levels];
-  $('effort').innerHTML = options.map((e) => `<option value="${e}">${EFFORT_LABELS[e] ?? e}${model?.defaultEffort === e ? ' (افتراضي)' : ''}</option>`).join('');
-  $('effort').value = options.includes(selected) ? selected : '';
-}
-
 function showAuth(status) {
+  authStatus = status;
   $('authStatus').textContent = status.connected
-    ? `متصل: ${status.email ?? 'ChatGPT'}${status.planType ? ` — ${status.planType}` : ''}`
-    : 'غير متصل';
+    ? t('auth.connected', { who: `${status.email ?? 'ChatGPT'}${status.planType ? ` — ${status.planType}` : ''}` })
+    : t('auth.disconnected');
   $('loginBtn').hidden = status.connected;
   $('logoutBtn').hidden = !status.connected;
 }
@@ -392,7 +739,7 @@ $('importBtn').addEventListener('click', async () => {
   try {
     showAuth(await request('auth-import', { text: $('authJson').value }));
     $('authJson').value = '';
-    loadModels(true);
+    mainForm.loadModels(true);
   } catch (err) {
     showSettingsError(err.message);
   }
@@ -400,12 +747,9 @@ $('importBtn').addEventListener('click', async () => {
 
 $('saveBtn').addEventListener('click', async () => {
   const next = readForm();
-  if (!currentProviderSettings(next).model) {
-    showSettingsError('اختر موديل الأول.');
-    return;
-  }
-  if (next.fast.enabled && !next.fast.apiKey) {
-    showSettingsError('الطبقة السريعة محتاجة TypeSafe API key.');
+  const problem = settingsProblem(next);
+  if (problem) {
+    showSettingsError(t(problem));
     return;
   }
   settings = await request('save-settings', { settings: next });
@@ -413,11 +757,21 @@ $('saveBtn').addEventListener('click', async () => {
   toggleSettings(false);
 });
 
+/** The i18n key of the first thing that blocks saving, or null. */
+function settingsProblem(next) {
+  if (!currentProviderSettings(next).model) return 'err.pickModel';
+  if (next.fallback.enabled && !currentProviderSettings(next.fallback).model) return 'err.fallbackModel';
+  if (next.fast.enabled && !next.fast.apiKey) return 'err.fastKey';
+  if (next.fast.enabled && !next.fast.baseUrl) return 'err.fastUrl';
+  if (next.fast.enabled && next.fast.fallback.enabled && !next.fast.fallback.apiKey) return 'err.fastFallbackKey';
+  return null;
+}
+
 function updateChip() {
   const p = currentProviderSettings();
   const label = settings.provider === 'chatgpt' ? 'ChatGPT' : presets[settings.compatible.preset]?.label ?? 'API';
-  const fastTag = settings.fast.enabled && settings.fast.apiKey ? ' · ⚡Jev' : '';
-  $('modelChip').textContent = p.model ? `${label} · ${p.model}${p.effort ? ` · ${p.effort}` : ''}${fastTag}` : 'لم يتم اختيار موديل';
+  const fastTag = settings.fast.enabled && settings.fast.apiKey ? ' · ⚡' : '';
+  $('modelChip').textContent = p.model ? `${label} · ${p.model}${p.effort ? ` · ${p.effort}` : ''}${fastTag}` : t('model.none');
 }
 
 function showSettingsError(message) {
@@ -425,8 +779,5 @@ function showSettingsError(message) {
   $('settingsError').hidden = false;
 }
 
-function escapeAttr(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-}
-
+startSessions().catch((err) => showSettingsError(err.message));
 init().catch((err) => showSettingsError(err.message));

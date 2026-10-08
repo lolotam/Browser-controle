@@ -1,0 +1,5 @@
+{
+  "extName": { "message": "وكيل المتصفح" },
+  "extDescription": { "message": "وكيل ذكاء اصطناعي يشغّل متصفحك: يبحث ويضغط ويكتب ويجمع المعلومات ثم يكتب لك تقريرًا. يعمل باشتراك ChatGPT أو xAI Grok أو Z.ai GLM أو أي API متوافق مع OpenAI." },
+  "actionTitle": { "message": "افتح وكيل المتصفح" }
+}

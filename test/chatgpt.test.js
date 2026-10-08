@@ -14,7 +14,7 @@ globalThis.chrome = {
 };
 
 const { startDeviceLogin, completeDeviceLogin, getAuthStatus } = await import('../src/providers/chatgpt-auth.js');
-const { ChatgptSession } = await import('../src/providers/chatgpt.js');
+const { ChatgptSession, listChatgptModels } = await import('../src/providers/chatgpt.js');
 
 const jwt = (claims) => `h.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.s`;
 const accessToken = jwt({ exp: Math.floor(Date.now() / 1000) + 3600, 'https://api.openai.com/auth': { chatgpt_account_id: 'acc_9' } });
@@ -58,6 +58,49 @@ test('device login exchanges the approved code and stores identity', async () =>
   assert.equal(form.get('code_verifier'), 'ver1');
   assert.equal(form.get('redirect_uri'), 'https://auth.openai.com/deviceauth/callback');
   assert.deepEqual(await getAuthStatus(), { connected: true, email: 'me@x.y', planType: 'pro', accountId: 'acc_9' });
+});
+
+// Regression 2026-10: client_version=0.99.0 got only a hidden model back, so the
+// model list showed empty right after a successful ChatGPT sign-in. A fixed version
+// goes stale with every Codex release, so the list asks as npm's latest one.
+test('model list asks as the newest Codex release and caches that version for a day', async () => {
+  store.chatgptAuth = { accessToken, refreshToken: 'rt', accountId: 'acc_9', expiresAt: Date.now() + 3600e3 };
+  stubFetch((url) => (url.includes('registry.npmjs.org')
+    ? Response.json({ version: '0.170.2' })
+    : Response.json({ models: [{ slug: 'gpt-6-sol', display_name: 'GPT-6 Sol', visibility: 'list', priority: 1 }] })));
+
+  await listChatgptModels();
+  await listChatgptModels();
+
+  const modelCalls = calls.filter((c) => c.url.includes('/models?'));
+  assert.deepEqual(modelCalls.map((c) => new URL(c.url).searchParams.get('client_version')), ['0.170.2', '0.170.2']);
+  assert.equal(calls.filter((c) => c.url.includes('registry.npmjs.org')).length, 1);
+});
+
+test('model list still loads when npm is unreachable', async () => {
+  store.chatgptAuth = { accessToken, refreshToken: 'rt', accountId: 'acc_9', expiresAt: Date.now() + 3600e3 };
+  stubFetch((url) => (url.includes('registry.npmjs.org')
+    ? new Response('', { status: 503 })
+    : Response.json({ models: [{ slug: 'gpt-6-sol', visibility: 'list', priority: 1 }] })));
+
+  const models = await listChatgptModels();
+
+  const [, minor] = new URL(calls.at(-1).url).searchParams.get('client_version').split('.').map(Number);
+  assert.ok(minor >= 161, 'the fallback must not be older than the release that surfaced this bug');
+  assert.deepEqual(models.map((m) => m.id), ['gpt-6-sol']);
+});
+
+test('models OpenAI hides are listed after the visible ones and flagged', async () => {
+  store.chatgptAuth = { accessToken, refreshToken: 'rt', accountId: 'acc_9', expiresAt: Date.now() + 3600e3 };
+  store.codexVersion = { version: '0.170.2', fetchedAt: Date.now() };
+  stubFetch(() => Response.json({ models: [
+    { slug: 'gpt-5.5', visibility: 'hide', priority: 1 },
+    { slug: 'gpt-6-sol', visibility: 'list', priority: 3 },
+  ] }));
+
+  const models = await listChatgptModels();
+
+  assert.deepEqual(models.map((m) => [m.id, m.hidden]), [['gpt-6-sol', false], ['gpt-5.5', true]]);
 });
 
 test('ChatgptSession streams a Responses turn with the subscription headers', async () => {

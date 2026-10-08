@@ -8,6 +8,7 @@
 //
 //   npm install && npm run e2e
 //   CHROMIUM_PATH=/path/to/chrome npm run e2e   (if Playwright's browser is not installed)
+//   E2E_SCREENSHOTS=out E2E_COLOR_SCHEME=dark npm run e2e   (save the panel after each scenario for visual review)
 
 import http from 'node:http';
 import path from 'node:path';
@@ -80,21 +81,59 @@ function scriptedJev() {
   };
 }
 
+/** Mock chat-model fast layer: answers like scriptedJev, in the chat judge's JSON shape. */
+function scriptedJudge() {
+  const jev = scriptedJev();
+  return (body) => {
+    const { answers } = jev({ state: JSON.parse(body.messages.at(-1).content) });
+    return Object.fromEntries(Object.entries(answers).map(([k, a]) => [k, a.type === 'noul' ? a.noul : { probabilities: a.probabilities }]));
+  };
+}
+
+/** Mock Vercel decision API: answers like scriptedJev, in the gateway's answer shape. */
+function scriptedGatewayJev() {
+  const jev = scriptedJev();
+  return (body) => {
+    const { answers } = jev({ state: body.state });
+    return {
+      model: 'typesafe-ai/jev',
+      answers: Object.fromEntries(Object.entries(answers).map(([k, a]) => [k, a.type === 'noul'
+        ? { type: 'boolean', probability: a.noul }
+        : { type: 'choice', choice: a.choice, probabilities: a.probabilities }])),
+    };
+  };
+}
+
 function startServer(handlers) {
-  const counts = { llm: 0, jev: 0 };
+  const counts = { llm: 0, jev: 0, judge: 0, decision: 0, backup: 0 };
   const server = http.createServer((req, res) => {
     let raw = '';
     req.on('data', (c) => { raw += c; });
     req.on('end', () => {
       try {
-        if (req.url === '/page') {
+        if (req.url === '/page' || req.url.startsWith('/page?')) {
           res.writeHead(200, { 'Content-Type': 'text/html' }).end(PAGE);
         } else if (req.url === '/v1/models') {
           res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ data: [{ id: 'mock-model' }] }));
-        } else if (req.url === '/v1/chat/completions') {
-          counts.llm += 1;
-          const [name, args] = handlers.llm(JSON.parse(raw));
-          const id = `call_${counts.llm}`;
+        } else if (req.url === '/v1/chat/completions' || req.url === '/b1/chat/completions') {
+          const body = JSON.parse(raw);
+          const isBackup = req.url.startsWith('/b1/');
+          if (body.response_format) {
+            counts.judge += 1;
+            if (req.headers.authorization !== 'Bearer judge-key') throw new Error('missing judge key');
+            const content = JSON.stringify(handlers.judge(body));
+            res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ model: 'mock-judge', choices: [{ message: { role: 'assistant', content } }] }));
+            return;
+          }
+          if (isBackup) counts.backup += 1;
+          else counts.llm += 1;
+          const scripted = (isBackup ? handlers.backup : handlers.llm)(body);
+          if (scripted === 'quota') {
+            res.writeHead(429, { 'Content-Type': 'application/json' }).end('{"error":{"message":"You exceeded your current quota"}}');
+            return;
+          }
+          const [name, args] = scripted;
+          const id = `call_${isBackup ? 'b' : ''}${counts.llm + counts.backup}`;
           const chunks = [
             { choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name, arguments: '' } }] } }] },
             { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify(args) } }] } }] },
@@ -102,6 +141,12 @@ function startServer(handlers) {
           res.writeHead(200, { 'Content-Type': 'text/event-stream' });
           for (const c of chunks) res.write(`data: ${JSON.stringify(c)}\n\n`);
           res.end('data: [DONE]\n\n');
+        } else if (req.url === '/v4/ai/decision-model') {
+          counts.decision += 1;
+          if (req.headers.authorization !== 'Bearer vercel-key' || req.headers['ai-model-id'] !== 'typesafe-ai/jev') throw new Error('bad decision request headers');
+          const body = JSON.parse(raw);
+          if (Object.values(body.questions).some((q) => q.type === 'noul')) throw new Error('noul must be sent as boolean');
+          res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(handlers.decision(body)));
         } else if (req.url === '/v1/systemone') {
           counts.jev += 1;
           if (req.headers.authorization !== 'Bearer jev-key') throw new Error('missing Jev key');
@@ -127,22 +172,26 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
     await panel.goto(`chrome-extension://${extensionId}/src/sidepanel/index.html`);
     if (name === 'llm') {
       // Settings UI: switching to the compatible provider lists the mock server's models.
-      await panel.waitForSelector('#settingsView:not([hidden])');
+      // Settings open by themselves only while no model is saved, which depends on scenario order.
+      // The preset list is filled by init(), so this waits until the form is ready.
+      await panel.waitForFunction(() => document.querySelectorAll('#preset option').length > 0);
+      if (await panel.isHidden('#settingsView')) await panel.click('#settingsBtn');
       await panel.selectOption('#provider', 'compatible');
       await panel.selectOption('#preset', 'custom');
       await panel.fill('#baseUrl', `${base}/v1`);
       await panel.click('#refreshModelsBtn');
       await panel.waitForFunction(() => [...document.querySelectorAll('#modelSelect option')].some((o) => o.value === 'mock-model'));
     }
-    await panel.evaluate(([baseUrl, fastConfig]) => chrome.storage.local.set({
+    await panel.evaluate(([baseUrl, fastConfig, fallback]) => chrome.storage.local.set({
       settings: {
+        ...(fallback ? { fallback: { enabled: true, provider: 'compatible', compatible: { preset: 'custom', baseUrl: `${baseUrl}/b1`, apiKey: '', model: 'mock-backup', effort: '' } } } : {}),
         provider: 'compatible',
         compatible: { preset: 'custom', baseUrl: `${baseUrl}/v1`, apiKey: '', model: 'mock-model', effort: '' },
-        fast: fastConfig ? { ...fastConfig, baseUrl } : { enabled: false },
+        fast: fastConfig ?? { enabled: false },
         vision: true,
         maxSteps: 12,
       },
-    }), [base, fast]);
+    }), [base, fast?.(base), Boolean(handlers.backup)]);
     await panel.reload();
     await panel.click('#newChatBtn');
 
@@ -154,15 +203,21 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
     await panel.click('#sendBtn');
     const final = await panel.waitForSelector('.msg.final', { timeout: 60000 });
     const report = await final.innerText();
+    if (process.env.E2E_SCREENSHOTS) {
+      await panel.setViewportSize({ width: 400, height: 720 });
+      await panel.screenshot({ path: path.join(process.env.E2E_SCREENSHOTS, `${name}-${process.env.E2E_COLOR_SCHEME ?? 'light'}.png`) });
+    }
     const steps = await panel.$$eval('.step', (rows) => rows.map((r) => `${r.classList.contains('fast') ? '⚡' : ' '} ${r.innerText.replace(/\s+/g, ' ')}`));
-    console.log(`\n== scenario: ${name} ==\n${steps.join('\n')}\n--- report ---\n${report}\n(LLM calls: ${counts.llm}, Jev calls: ${counts.jev})`);
+    console.log(`\n== scenario: ${name} ==\n${steps.join('\n')}\n--- report ---\n${report}\n(LLM calls: ${counts.llm}, Jev calls: ${counts.jev}, judge calls: ${counts.judge}, decision calls: ${counts.decision})`);
 
     const failures = [];
     const pageResult = await target.textContent('#out');
     if (!report.includes(expectReport)) failures.push(`report missing "${expectReport}" (page shows "${pageResult}")`);
     if (steps.some((s) => s.includes('✗'))) failures.push('a tool step failed');
     if (pageErrors.length) failures.push(`side panel errors: ${pageErrors.join(' | ')}`);
-    failures.push(...check({ counts, steps, report }));
+    const notices = await panel.$$eval('.notice.error', (rows) => rows.map((r) => r.innerText));
+    if (notices.length) console.log(`notices: ${notices.join(' | ')}`);
+    failures.push(...check({ counts, steps, report, notices }));
     await target.close();
     return failures;
   } finally {
@@ -171,11 +226,98 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
   }
 }
 
+/** Primary model that answers once, then reports its quota as exhausted. */
+function quotaAfterFirstTurn() {
+  let turn = 0;
+  return () => (turn++ === 0 ? ['read_page', {}] : 'quota');
+}
+
+/** Shared by both fast scenarios: two fast steps, then exactly one LLM call for the report. */
+function fastChecks({ counts, steps, report }) {
+  return [
+    ...(counts.llm === 1 ? [] : [`expected 1 LLM call, got ${counts.llm}`]),
+    ...(steps.filter((s) => s.startsWith('⚡')).length === 2 ? [] : ['expected 2 fast steps']),
+    ...(report.includes('handover mentions fast steps: true') ? [] : ['LLM was not told about fast steps']),
+  ];
+}
+
+/** One scripted LLM per conversation, keyed by its first user message, so parallel sessions stay apart. */
+function perTask(makeScript) {
+  const scripts = new Map();
+  return (body) => {
+    const first = body.messages.find((m) => m.role === 'user');
+    const key = typeof first.content === 'string' ? first.content : JSON.stringify(first.content);
+    if (!scripts.has(key)) scripts.set(key, makeScript());
+    return scripts.get(key)(body);
+  };
+}
+
+/**
+ * Two sessions run tasks at the same time on two tabs. Each must finish its own
+ * task, and each tab must end up in its own session's tab group.
+ */
+async function runParallelScenario(context, extensionId) {
+  const { server, counts, base } = await startServer({ llm: perTask(scriptedLlm) });
+  const pages = [];
+  const pageErrors = [];
+  try {
+    const openPanel = async () => {
+      const panel = await context.newPage();
+      panel.on('pageerror', (err) => pageErrors.push(err.message));
+      pages.push(panel);
+      await panel.goto(`chrome-extension://${extensionId}/src/sidepanel/index.html`);
+      return panel;
+    };
+    const panelA = await openPanel();
+    await panelA.evaluate((baseUrl) => chrome.storage.local.set({
+      settings: { provider: 'compatible', compatible: { preset: 'custom', baseUrl: `${baseUrl}/v1`, apiKey: '', model: 'mock-model', effort: '' }, fast: { enabled: false }, vision: true, maxSteps: 12 },
+    }), base);
+    await panelA.reload();
+    await panelA.click('#newChatBtn');
+    const panelB = await openPanel();
+    await panelB.click('#newChatBtn');
+
+    const targetA = await context.newPage();
+    await targetA.goto(`${base}/page?s=a`);
+    const targetB = await context.newPage();
+    await targetB.goto(`${base}/page?s=b`);
+    pages.push(targetA, targetB);
+
+    await targetA.bringToFront();
+    await panelA.fill('#input', 'Fill the form and report the result (session A)');
+    await panelA.click('#sendBtn');
+    await panelA.waitForSelector('.step', { timeout: 30000 }); // A has claimed tab A
+    await targetB.bringToFront();
+    await panelB.fill('#input', 'Fill the form and report the result (session B)');
+    await panelB.click('#sendBtn');
+
+    const [reportA, reportB] = await Promise.all([panelA, panelB].map(async (panel) => (await panel.waitForSelector('.msg.final', { timeout: 90000 })).innerText()));
+    const groups = await panelA.evaluate(async () => Object.fromEntries((await chrome.tabs.query({})).filter((t) => t.url.includes('/page')).map((t) => [new URL(t.url).search, t.groupId])));
+    const sessions = await panelA.evaluate(() => chrome.runtime.sendMessage({ type: 'sessions-list' }));
+    console.log(`\n== scenario: parallel ==\nA: ${reportA.replace(/\s+/g, ' ')}\nB: ${reportB.replace(/\s+/g, ' ')}\ngroups ${JSON.stringify(groups)}, sessions ${sessions.result.length}, LLM calls ${counts.llm}`);
+
+    const failures = [];
+    for (const [name, report] of [['A', reportA], ['B', reportB]]) {
+      if (!report.includes('Result: hello world / Blue')) failures.push(`session ${name} report is wrong: ${report}`);
+    }
+    if (!(groups['?s=a'] >= 0 && groups['?s=b'] >= 0 && groups['?s=a'] !== groups['?s=b'])) failures.push(`each tab should be in its own session group, got ${JSON.stringify(groups)}`);
+    if (sessions.result.filter((s) => /session [AB]\)?/.test(s.title) || s.title.startsWith('Fill the form')).length < 2) failures.push('both sessions should be listed with titles from their tasks');
+    if (pageErrors.length) failures.push(`side panel errors: ${pageErrors.join(' | ')}`);
+    return failures;
+  } finally {
+    for (const page of pages) await page.close();
+    server.close();
+  }
+}
+
 async function main() {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-e2e-'));
   const context = await chromium.launchPersistentContext(userDataDir, {
     headless: true,
+    colorScheme: process.env.E2E_COLOR_SCHEME === 'dark' ? 'dark' : 'light',
     executablePath: process.env.CHROMIUM_PATH || undefined,
+    // The default headless shell cannot load extensions; full Chromium in new headless mode can.
+    channel: process.env.CHROMIUM_PATH ? undefined : 'chromium',
     args: [`--disable-extensions-except=${EXTENSION_DIR}`, `--load-extension=${EXTENSION_DIR}`],
   });
   try {
@@ -183,6 +325,7 @@ async function main() {
     const extensionId = new URL(worker.url()).host;
 
     const failures = [
+      ...(await runParallelScenario(context, extensionId)),
       ...(await runScenario(context, extensionId, {
         name: 'llm',
         task: 'Fill the form and report the result',
@@ -191,15 +334,43 @@ async function main() {
         check: ({ report }) => (report.includes('screenshot seen: true') ? [] : ['screenshot never reached the model']),
       })),
       ...(await runScenario(context, extensionId, {
+        name: 'fallback',
+        task: 'Fill the form and report the result',
+        handlers: { llm: quotaAfterFirstTurn(), backup: scriptedLlm() },
+        expectReport: 'Result: hello world / Blue',
+        check: ({ counts, notices }) => [
+          ...(counts.llm === 2 && counts.backup >= 6 ? [] : [`expected 2 primary calls then the backup (primary ${counts.llm}, backup ${counts.backup})`]),
+          ...(notices.length === 1 && /mock-backup/.test(notices[0]) ? [] : [`expected one red notice naming the backup, got ${JSON.stringify(notices)}`]),
+        ],
+      })),
+      ...(await runScenario(context, extensionId, {
         name: 'fast',
         task: 'Search for "hello world" and press Go',
         handlers: { llm: reportingLlm(), jev: scriptedJev() },
-        fast: { enabled: true, mode: 'auto', apiKey: 'jev-key', model: 'jev-latest' },
+        fast: (base) => ({ enabled: true, mode: 'auto', provider: 'typesafe', apiKey: 'jev-key', model: 'jev-latest', baseUrl: base }),
         expectReport: 'Result: hello world / Red',
-        check: ({ counts, steps, report }) => [
-          ...(counts.llm === 1 ? [] : [`expected 1 LLM call, got ${counts.llm}`]),
-          ...(steps.filter((s) => s.startsWith('⚡')).length === 2 ? [] : ['expected 2 fast steps']),
-          ...(report.includes('handover mentions fast steps: true') ? [] : ['LLM was not told about fast steps']),
+        check: fastChecks,
+      })),
+      ...(await runScenario(context, extensionId, {
+        name: 'vercel-jev',
+        task: 'Search for "hello world" and press Go',
+        handlers: { llm: reportingLlm(), decision: scriptedGatewayJev() },
+        fast: (base) => ({ enabled: true, mode: 'auto', provider: 'vercel', decision: true, apiKey: 'vercel-key', model: 'typesafe-ai/jev', baseUrl: `${base}/v1`, minProb: 0.6 }),
+        expectReport: 'Result: hello world / Red',
+        check: (run) => [
+          ...fastChecks(run),
+          ...(run.counts.decision >= 2 && run.counts.judge === 0 ? [] : [`expected the decision API (decision ${run.counts.decision}, judge ${run.counts.judge})`]),
+        ],
+      })),
+      ...(await runScenario(context, extensionId, {
+        name: 'chat-fast',
+        task: 'Search for "hello world" and press Go',
+        handlers: { llm: reportingLlm(), judge: scriptedJudge() },
+        fast: (base) => ({ enabled: true, mode: 'auto', provider: 'custom', apiKey: 'judge-key', model: 'mock-judge', baseUrl: `${base}/v1`, minProb: 0.75 }),
+        expectReport: 'Result: hello world / Red',
+        check: (run) => [
+          ...fastChecks(run),
+          ...(run.counts.judge >= 2 && run.counts.jev === 0 ? [] : [`expected the chat judge, not Jev (judge ${run.counts.judge}, jev ${run.counts.jev})`]),
         ],
       })),
     ];

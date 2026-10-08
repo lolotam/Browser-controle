@@ -9,14 +9,32 @@ export const COMPATIBLE_PRESETS = {
   custom: { label: 'Custom (OpenAI-compatible)', baseUrl: 'http://localhost:11434/v1', model: '', thinkingStyle: 'reasoning_effort' },
 };
 
+export const FAST_PRESETS = {
+  typesafe: { label: 'TypeSafe Jev', baseUrl: 'https://api.typesafe.ai', model: 'jev-latest', minProb: 0.6, decision: true },
+  vercel: { label: 'Vercel AI Gateway', baseUrl: 'https://ai-gateway.vercel.sh/v1', model: 'typesafe-ai/jev', minProb: 0.6, decision: true },
+  openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: '', minProb: 0.75, decision: false },
+  custom: { label: 'Custom (OpenAI-compatible)', baseUrl: '', model: '', minProb: 0.75, decision: false },
+};
+
 export const DEFAULT_SETTINGS = {
   provider: 'chatgpt',
-  chatgpt: { model: '', effort: '', clientVersion: '0.99.0' },
+  chatgpt: { model: '', effort: '' },
   compatible: { preset: 'xai', baseUrl: COMPATIBLE_PRESETS.xai.baseUrl, apiKey: '', model: COMPATIBLE_PRESETS.xai.model, effort: '' },
-  fast: { enabled: false, mode: 'auto', baseUrl: 'https://api.typesafe.ai', apiKey: '', model: 'jev-latest', minProb: 0.6, riskyMax: 0.3 },
+  fast: {
+    enabled: false, mode: 'auto', provider: 'typesafe', baseUrl: 'https://api.typesafe.ai', apiKey: '', model: 'jev-latest', minProb: 0.6, riskyMax: 0.3,
+    fallback: { enabled: false, provider: 'typesafe', baseUrl: 'https://api.typesafe.ai', apiKey: '', model: 'jev-latest', decision: true },
+  },
+  // Used when the main model's provider fails mid-task (see FallbackSession).
+  fallback: {
+    enabled: false,
+    provider: 'compatible',
+    chatgpt: { model: '', effort: '' },
+    compatible: { preset: 'openrouter', baseUrl: COMPATIBLE_PRESETS.openrouter.baseUrl, apiKey: '', model: '', effort: '' },
+  },
   maxSteps: 40,
   vision: true,
   allowJavascript: false,
+  uiLanguage: 'auto',
 };
 
 export async function loadSettings() {
@@ -36,6 +54,16 @@ export function mergeSettings(stored = {}) {
     ...stored,
     chatgpt: { ...DEFAULT_SETTINGS.chatgpt, ...(stored.chatgpt ?? {}) },
     compatible: { ...DEFAULT_SETTINGS.compatible, ...(stored.compatible ?? {}) },
-    fast: { ...DEFAULT_SETTINGS.fast, ...(stored.fast ?? {}) },
+    fast: {
+      ...DEFAULT_SETTINGS.fast,
+      ...(stored.fast ?? {}),
+      fallback: { ...DEFAULT_SETTINGS.fast.fallback, ...(stored.fast?.fallback ?? {}) },
+    },
+    fallback: {
+      ...DEFAULT_SETTINGS.fallback,
+      ...(stored.fallback ?? {}),
+      chatgpt: { ...DEFAULT_SETTINGS.fallback.chatgpt, ...(stored.fallback?.chatgpt ?? {}) },
+      compatible: { ...DEFAULT_SETTINGS.fallback.compatible, ...(stored.fallback?.compatible ?? {}) },
+    },
   };
 }

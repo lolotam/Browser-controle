@@ -5,15 +5,21 @@ import { readSse } from '../lib/sse.js';
 
 const KEEP_FULL_OBSERVATIONS = 2;
 const TRIMMED_OBSERVATION_CHARS = 400;
+// Gateways such as Vercel's list image, video and embedding models next to chat
+// models. "evaluation" models (typesafe-ai/jev) are kept, flagged as decision models.
+const NON_CHAT_TYPES = new Set(['embedding', 'image', 'video', 'reranking', 'speech', 'transcription', 'realtime']);
 
 export async function listCompatibleModels(baseUrl, apiKey) {
-  const res = await fetch(`${trimSlash(baseUrl)}/models`, {
-    credentials: 'omit',
-    headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-  });
+  const url = `${trimSlash(baseUrl)}/models`;
+  let res = await fetch(url, { credentials: 'omit', headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {} });
+  // Vercel and OpenRouter publish their lists but reject an invalid key, so a
+  // typo or a key not entered yet must not hide the list.
+  if (apiKey && (res.status === 401 || res.status === 403)) res = await fetch(url, { credentials: 'omit', headers: {} });
   if (!res.ok) throw new Error(`Could not load models (HTTP ${res.status}). Type the model id manually.`);
   const body = await res.json();
-  return (body.data ?? body.models ?? []).map((m) => ({ id: m.id ?? m.name, name: m.id ?? m.name, efforts: [] }));
+  return (body.data ?? body.models ?? [])
+    .filter((m) => !NON_CHAT_TYPES.has(m.type))
+    .map((m) => ({ id: m.id ?? m.name, name: m.id ?? m.name, efforts: [], decision: m.type === 'evaluation' }));
 }
 
 export class CompatibleSession {

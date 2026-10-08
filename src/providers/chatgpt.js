@@ -5,6 +5,10 @@ import { readSse } from '../lib/sse.js';
 import { getValidAuth } from './chatgpt-auth.js';
 
 const BASE_URL = 'https://chatgpt.com/backend-api/codex';
+// The backend drops models newer than the asking client, so ask as the newest
+// Codex CLI release on npm. The fallback only matters when npm is unreachable.
+const FALLBACK_CLIENT_VERSION = '0.161.0';
+const CLIENT_VERSION_TTL_MS = 24 * 60 * 60 * 1000;
 const KEEP_FULL_OBSERVATIONS = 2;
 const TRIMMED_OBSERVATION_CHARS = 400;
 
@@ -15,16 +19,16 @@ async function authHeaders(forceRefresh = false) {
   return headers;
 }
 
-/** Lists the models the signed-in plan can use, with their reasoning levels. */
-export async function listChatgptModels(clientVersion) {
-  const url = `${BASE_URL}/models?client_version=${encodeURIComponent(clientVersion || '0.99.0')}`;
+/** Lists every model the signed-in plan returns; ones OpenAI hides come last, flagged. */
+export async function listChatgptModels() {
+  const url = `${BASE_URL}/models?client_version=${await codexClientVersion()}`;
   let res = await fetch(url, { credentials: 'omit', headers: await authHeaders() });
   if (res.status === 401) res = await fetch(url, { credentials: 'omit', headers: await authHeaders(true) });
   if (!res.ok) throw new Error(`Could not load models (HTTP ${res.status}).`);
   const { models = [] } = await res.json();
+  const isHidden = (m) => m.visibility === 'hide' || m.visibility === 'none';
   return models
-    .filter((m) => m.visibility !== 'hide' && m.visibility !== 'none')
-    .sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99))
+    .sort((a, b) => isHidden(a) - isHidden(b) || (a.priority ?? 99) - (b.priority ?? 99))
     .map((m) => ({
       id: m.slug,
       name: m.display_name ?? m.slug,
@@ -32,7 +36,23 @@ export async function listChatgptModels(clientVersion) {
       efforts: (m.supported_reasoning_levels ?? []).map((l) => l.effort),
       defaultEffort: m.default_reasoning_level ?? null,
       contextWindow: m.context_window ?? null,
+      hidden: isHidden(m),
     }));
+}
+
+/** Latest @openai/codex version, cached a day; falls back to the last known one when npm fails. */
+async function codexClientVersion() {
+  const { codexVersion: cached } = await chrome.storage.local.get('codexVersion');
+  if (cached && Date.now() - cached.fetchedAt < CLIENT_VERSION_TTL_MS) return cached.version;
+  try {
+    const res = await fetch('https://registry.npmjs.org/@openai/codex/latest', { credentials: 'omit' });
+    const { version } = res.ok ? await res.json() : {};
+    if (!/^\d+\.\d+\.\d+$/.test(version ?? '')) throw new Error(`unexpected npm answer (HTTP ${res.status})`);
+    await chrome.storage.local.set({ codexVersion: { version, fetchedAt: Date.now() } });
+    return version;
+  } catch {
+    return cached?.version ?? FALLBACK_CLIENT_VERSION;
+  }
 }
 
 export class ChatgptSession {

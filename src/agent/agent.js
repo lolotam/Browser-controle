@@ -21,7 +21,7 @@ export async function runAgent({ session, execute, task, maxSteps, signal, emit,
       throwIfAborted(signal);
       if (outcome.kind === 'off') {
         fast = null;
-        emit({ type: 'fast-handoff', reason: 'Jev failed repeatedly; continuing with the LLM only' });
+        emit({ type: 'fast-handoff', reason: 'Fast layer failed 3 times; continuing with the main model only' });
       } else if (outcome.kind === 'acted') {
         emit({ type: 'tool-start', step, name: outcome.tool, args: outcome.args, fast: true });
         emit({ type: 'tool-end', step, name: outcome.tool, ok: !outcome.result.isError, summary: firstLine(outcome.result.output) });

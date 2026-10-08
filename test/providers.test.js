@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { parseSseChunk } from '../src/lib/sse.js';
 import { chatgptIdentity } from '../src/lib/jwt.js';
 import { compactInput, parseOutput, withoutId } from '../src/providers/chatgpt.js';
-import { CompatibleSession, compactMessages, createAccumulator } from '../src/providers/openai-compatible.js';
+import { CompatibleSession, compactMessages, createAccumulator, listCompatibleModels } from '../src/providers/openai-compatible.js';
+import { mergeSettings } from '../src/lib/settings.js';
 
 const fakeJwt = (claims) => `h.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.s`;
 
@@ -88,4 +89,50 @@ test('CompatibleSession maps effort to GLM thinking or reasoning_effort', () => 
   assert.equal(grok.reasoning_effort, 'high');
   const plain = new CompatibleSession({ ...base, effort: '', thinkingStyle: 'reasoning_effort' }).requestBody('auto');
   assert.equal('reasoning_effort' in plain, false);
+});
+
+test('fast settings saved before providers existed keep using TypeSafe Jev', () => {
+  const { fast } = mergeSettings({ fast: { enabled: true, apiKey: 'jev', baseUrl: 'https://api.typesafe.ai' } });
+  assert.equal(fast.provider, 'typesafe');
+});
+
+test('model lists skip image, video and embedding models and flag decision models', async () => {
+  globalThis.fetch = async () => Response.json({ data: [
+    { id: 'anthropic/claude-haiku-5.5', type: 'language' },
+    { id: 'openai/text-embedding-3', type: 'embedding' },
+    { id: 'google/veo', type: 'video' },
+    { id: 'typesafe-ai/jev', type: 'evaluation' },
+    { id: 'local-model' },
+  ] });
+  const models = await listCompatibleModels('https://gw.example/v1', 'k');
+  assert.deepEqual(models.map((m) => [m.id, m.decision]), [
+    ['anthropic/claude-haiku-5.5', false],
+    ['typesafe-ai/jev', true],
+    ['local-model', false],
+  ]);
+});
+
+test('a public model list still loads when the key is missing or rejected', async () => {
+  const sent = [];
+  globalThis.fetch = async (url, init) => {
+    sent.push(init.headers.Authorization ?? null);
+    return init.headers.Authorization ? new Response('{"error":"bad key"}', { status: 401 }) : Response.json({ data: [{ id: 'typesafe-ai/jev', type: 'evaluation' }] });
+  };
+  const models = await listCompatibleModels('https://ai-gateway.vercel.sh/v1', 'typo-key');
+  assert.deepEqual(sent, ['Bearer typo-key', null]);
+  assert.deepEqual(models.map((m) => m.id), ['typesafe-ai/jev']);
+});
+
+test('settings saved before backups existed get disabled backups, and partial backups keep their fields', () => {
+  const old = mergeSettings({ provider: 'chatgpt', fast: { enabled: true, provider: 'vercel' } });
+  assert.equal(old.fallback.enabled, false);
+  assert.equal(old.fallback.compatible.preset, 'openrouter');
+  assert.equal(old.fast.fallback.enabled, false);
+  assert.equal(old.fast.fallback.provider, 'typesafe');
+
+  const partial = mergeSettings({ fallback: { enabled: true, compatible: { apiKey: 'or-key' } }, fast: { fallback: { enabled: true, apiKey: 'tk' } } });
+  assert.equal(partial.fallback.compatible.apiKey, 'or-key');
+  assert.equal(partial.fallback.compatible.baseUrl, 'https://openrouter.ai/api/v1');
+  assert.equal(partial.fast.fallback.apiKey, 'tk');
+  assert.equal(partial.fast.fallback.model, 'jev-latest');
 });

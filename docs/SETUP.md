@@ -40,6 +40,10 @@ There is nothing to build. The folder that contains `manifest.json` (the repo ro
 
 When you pull new code later, return to `chrome://extensions` and click the **reload ↻** button on the extension card.
 
+**Keep your settings:** use **reload ↻**, not **Remove**. Chrome deletes an extension's stored data (settings, API keys, ChatGPT sign-in) when it is removed. Before removing it, open Settings → **Settings backup** → **Download backup**; after loading it again, use **Restore from file**. The backup file holds your keys, so keep it private.
+
+The manifest pins the extension ID to `bhoimdlegicacjkholpfcokajpiimbcn`, so it stays the same whichever folder you load it from. The first load after this change still starts empty, because the previous ID came from the folder path.
+
 ---
 
 ## 4. Connect your ChatGPT account
@@ -96,7 +100,7 @@ After you connect, the model list loads automatically from your account (`/backe
    - **JavaScript**: leave this off unless you need precise data extraction. It gives the model full script access to pages.
 4. Click **حفظ** (Save). The chip in the header shows `ChatGPT · <model> · <effort>`.
 
-Leave **⚡ الطبقة السريعة (Jev)** off for now. It needs a separate TypeSafe API key and is covered in the Arabic overview ([README.ar.md](README.ar.md)).
+Leave **⚡ الطبقة السريعة** (fast layer) off for now. It needs its own API key, for TypeSafe Jev, OpenRouter, Vercel AI Gateway or an OpenAI-compatible server, and is covered in the Arabic overview ([README.ar.md](README.ar.md)).
 
 ---
 
@@ -168,8 +172,9 @@ src/browser/page-scripts.js        injected DOM snapshot / element actions
 src/providers/chatgpt-auth.js      Codex device-code OAuth, refresh, auth.json import
 src/providers/chatgpt.js           Responses API on chatgpt.com/backend-api/codex
 src/providers/openai-compatible.js Chat Completions (for future providers)
-src/fast/                          optional Jev fast layer
-src/sidepanel/                     UI (Arabic, RTL) + safe Markdown renderer
+src/fast/                          optional fast layer (Jev or a gateway chat model)
+src/sidepanel/                     UI (Arabic RTL / English LTR, follows system theme) + safe Markdown renderer
+icons/, _locales/                  logo + PNG icons (scripts/render-icons.mjs), translated store name
 test/                              unit tests + e2e/run-e2e.mjs
 ```
 

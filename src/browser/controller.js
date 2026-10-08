@@ -25,8 +25,18 @@ const KEYS = {
 };
 const MODIFIERS = { Alt: 1, Control: 2, Ctrl: 2, Meta: 4, Cmd: 4, Shift: 8 };
 
+/**
+ * One controller per session. The session's tabs live in a Chrome tab group
+ * titled with the session name: the group is how parallel sessions keep off
+ * each other's tabs and how the user sees which agent works where. Tabs are
+ * never brought to the front; input and screenshots go through CDP.
+ */
 export class BrowserController {
-  constructor() {
+  constructor({ title = 'Browser Agent', color = 'cyan', isTakenByOther = () => null } = {}) {
+    this.title = title;
+    this.color = color;
+    this.isTakenByOther = isTakenByOther;
+    this.groupId = null;
     this.tabId = null;
     this.attached = new Set();
     chrome.debugger.onDetach.addListener(({ tabId }) => this.attached.delete(tabId));
@@ -44,18 +54,53 @@ export class BrowserController {
         this.tabId = null;
       }
     }
+    return this.startOn();
+  }
+
+  /** A task begins on the tab the user is looking at, which joins the session's group. */
+  async startOn() {
     const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     if (!tab) throw new Error('No active tab found.');
-    this.tabId = tab.id;
-    return tab;
+    return this.useTab(tab.id);
   }
 
   async useTab(tabId) {
-    const tab = await chrome.tabs.get(tabId);
-    await chrome.tabs.update(tabId, { active: true });
-    await chrome.windows.update(tab.windowId, { focused: true });
+    const tab = await this.claimTab(tabId);
     this.tabId = tabId;
     return tab;
+  }
+
+  async openTab(url) {
+    const created = await chrome.tabs.create({ url, active: false });
+    return this.useTab(created.id);
+  }
+
+  ownsTab(tab) {
+    return this.groupId !== null && tab.groupId === this.groupId;
+  }
+
+  async claimTab(tabId) {
+    const tab = await chrome.tabs.get(tabId);
+    if (this.ownsTab(tab)) return tab;
+    const owner = this.isTakenByOther(tab);
+    if (owner) throw new Error(`Tab ${tabId} is used by session "${owner}". Use a tab of your own or open a new one.`);
+    if (this.groupId !== null) {
+      try {
+        await chrome.tabs.group({ tabIds: [tabId], groupId: this.groupId });
+        return { ...tab, groupId: this.groupId };
+      } catch {
+        this.groupId = null; // every tab of the group was closed, so the group is gone
+      }
+    }
+    this.groupId = await chrome.tabs.group({ tabIds: [tabId] });
+    await chrome.tabGroups.update(this.groupId, { title: this.title, color: this.color });
+    return { ...tab, groupId: this.groupId };
+  }
+
+  async rename(title) {
+    this.title = title;
+    if (this.groupId === null) return;
+    await chrome.tabGroups.update(this.groupId, { title }).catch(() => {}); // the group may have closed
   }
 
   async cdp(method, params = {}) {

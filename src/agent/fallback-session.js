@@ -1,0 +1,97 @@
+// Wraps the main model's session behind the interface runAgent uses. When the
+// primary provider fails mid-task, a backup session takes over through a
+// handoff message built from a provider-neutral log, because the providers keep
+// conversations in incompatible formats. The same log restores a reopened
+// session later.
+
+import { describeFailure } from '../lib/failure.js';
+
+const LAST_TEXT_CHARS = 3000;
+const STEP_RESULT_CHARS = 160;
+const HANDOFF_STEPS = 40;
+const HANDOFF_NOTES = 10;
+const NOTE_CHARS = 500;
+
+export function emptyLog() {
+  return { task: null, notes: [], steps: [], last: null };
+}
+
+export class FallbackSession {
+  constructor({ primary, createBackup = null, labels = {}, notify = () => {}, log = emptyLog() }) {
+    this.active = primary;
+    this.createBackup = createBackup;
+    this.labels = labels;
+    this.notify = notify;
+    this.log = log;
+    this.switched = false;
+    this.openCalls = new Map();
+  }
+
+  addUserMessage(text, images = []) {
+    if (this.log.task === null) this.log.task = text;
+    else this.log.notes.push(text);
+    this.active.addUserMessage(text, images);
+  }
+
+  addToolResult(callId, output, images = []) {
+    const call = this.openCalls.get(callId);
+    if (call) {
+      this.log.steps.push({ name: call.name, args: call.args, result: firstLine(output) });
+      this.openCalls.delete(callId);
+    }
+    this.log.last = { text: String(output).slice(0, LAST_TEXT_CHARS), images };
+    this.active.addToolResult(callId, output, images);
+  }
+
+  async next(options) {
+    let turn;
+    try {
+      turn = await this.active.next(options);
+    } catch (err) {
+      if (err?.name === 'AbortError' || this.switched || !this.createBackup) throw err;
+      turn = await this.switchToBackup(err, options);
+    }
+    for (const call of turn.toolCalls ?? []) this.openCalls.set(call.id, call);
+    return turn;
+  }
+
+  async switchToBackup(primaryError, options) {
+    const failure = describeFailure(primaryError);
+    this.notify({ level: 'error', kind: 'switched', from: this.labels.primary, to: this.labels.backup, ...failure });
+    this.switched = true;
+    this.active = this.createBackup();
+    this.active.addUserMessage(handoffMessage(this.log, failure.reason), this.log.last?.images ?? []);
+    try {
+      return await this.active.next(options);
+    } catch (err) {
+      if (err?.name === 'AbortError') throw err;
+      const second = describeFailure(err);
+      this.notify({
+        level: 'error', kind: 'both-failed', from: this.labels.primary, to: this.labels.backup,
+        code: second.code, reason: `${failure.reason} / ${second.reason}`, detail: `${failure.detail}\n${second.detail}`,
+      });
+      throw new Error(`Primary failed: ${failure.detail} Backup failed: ${second.detail}`);
+    }
+  }
+}
+
+/** What a model needs to continue someone else's task without redoing it. */
+export function handoffMessage(log, reason) {
+  const parts = [`You are taking over a browser task from another AI model that stopped working (${reason}).`];
+  parts.push(`Task:\n${log.task ?? '(unknown)'}`);
+  const notes = log.notes.slice(-HANDOFF_NOTES).map((n) => `- ${String(n).slice(0, NOTE_CHARS)}`);
+  if (notes.length) parts.push(`Messages during the task:\n${notes.join('\n')}`);
+  const steps = log.steps.slice(-HANDOFF_STEPS);
+  const offset = log.steps.length - steps.length;
+  if (steps.length) {
+    parts.push(`Steps already done (do not repeat them):\n${steps.map((s, i) => `${offset + i + 1}. ${s.name} ${JSON.stringify(s.args ?? {})} → ${s.result}`).join('\n')}`);
+  }
+  if (log.last?.text) parts.push(`Latest page observation:\n${log.last.text}`);
+  parts.push('Continue the task from the current state. Do not repeat completed steps.');
+  return parts.join('\n\n');
+}
+
+function firstLine(text = '') {
+  const line = String(text).split('\n')[0];
+  return line.length > STEP_RESULT_CHARS ? `${line.slice(0, STEP_RESULT_CHARS)}…` : line;
+}
