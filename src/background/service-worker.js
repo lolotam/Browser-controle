@@ -162,10 +162,17 @@ async function handleRequest(msg) {
 
 function sessionForTab(tab) {
   return tabSessions.sessionForTab(tab, {
-    ownerOf: (t) => [...runners.values()].find((r) => r.browser.ownsTab(t))?.id ?? null,
+    ownerOf: groupOwner,
     exists: async (id) => (await store.listSessions()).some((s) => s.id === id),
     createBlank: blankSession,
   });
+}
+
+/** The session whose tab group holds the tab; saved sessions count too, since the worker may have restarted. */
+async function groupOwner(tab) {
+  if (tab.groupId === undefined || tab.groupId < 0) return null;
+  const live = [...runners.values()].find((r) => r.browser.ownsTab(tab));
+  return live?.id ?? (await store.listSessions()).find((s) => s.groupId === tab.groupId)?.id ?? null;
 }
 
 /**

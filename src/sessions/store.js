@@ -1,6 +1,6 @@
 // Sessions saved on this computer in chrome.storage.local (the extension has
-// unlimitedStorage). The index holds titles and times; each session's body is
-// its own key so listing never loads transcripts.
+// unlimitedStorage). The index holds titles, times and tab groups; each session's
+// body is its own key so listing never loads transcripts.
 
 const INDEX = 'sessions';
 const bodyKey = (id) => `session:${id}`;
@@ -42,7 +42,7 @@ export async function loadSession(id) {
 
 export async function saveSession(id, { transcript, log, groupId }) {
   await chrome.storage.local.set({ [bodyKey(id)]: { transcript, log, groupId } });
-  await updateIndex((index) => index.map((s) => (s.id === id ? { ...s, updatedAt: Date.now() } : s)));
+  await updateIndex((index) => index.map((s) => (s.id === id ? { ...s, groupId, updatedAt: Date.now() } : s)));
 }
 
 export async function renameSession(id, title) {
