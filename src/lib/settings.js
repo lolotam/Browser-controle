@@ -1,10 +1,11 @@
 // User settings persisted in chrome.storage.local.
 
 // Main model and backup providers (both use this list). thinkingStyle 'none' sends
-// no reasoning parameter, for APIs whose models reject reasoning_effort.
+// no reasoning parameter, for APIs whose models reject reasoning_effort; 'gemini'
+// offers no Off, because Gemini 3 thinking cannot be turned off.
 export const COMPATIBLE_PRESETS = {
   openai: { label: 'OpenAI API key', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5', thinkingStyle: 'reasoning_effort' },
-  gemini: { label: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.8-flash', thinkingStyle: 'reasoning_effort' },
+  gemini: { label: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.8-flash', thinkingStyle: 'gemini' },
   xai: { label: 'xAI (Grok)', baseUrl: 'https://api.x.ai/v1', model: 'grok-4', thinkingStyle: 'reasoning_effort' },
   deepseek: { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', thinkingStyle: 'none' },
   nvidia: { label: 'NVIDIA NIM', baseUrl: 'https://integrate.api.nvidia.com/v1', model: 'nvidia/nemotron-3-super-120b-a12b', thinkingStyle: 'none' },

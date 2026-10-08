@@ -167,3 +167,17 @@ test('Jev models in a gateway list count as decision models', async () => {
   const models = await listCompatibleModels('https://opencode.ai/zen/v1', 'k');
   assert.deepEqual(models.filter((m) => m.decision).map((m) => m.id), ['jev-1.13', 'jev-1.13-free']);
 });
+
+// Review 2026-10 (Codex P1): Gemini 3 answers 400 on the next turn when a tool call
+// comes back without the thought signature it carried.
+test('tool calls keep provider extras such as the Gemini thought signature', () => {
+  const acc = createAccumulator();
+  acc.push({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', type: 'function', function: { name: 'click', arguments: '' }, extra_content: { google: { thought_signature: 'sig-1' } } }] } }] });
+  acc.push({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"index":2}' } }] } }] });
+  const [call] = acc.result().rawToolCalls;
+  assert.deepEqual(call, { id: 'c1', type: 'function', function: { name: 'click', arguments: '{"index":2}' }, extra_content: { google: { thought_signature: 'sig-1' } } });
+
+  const plain = createAccumulator();
+  plain.push({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c2', function: { name: 'read_page', arguments: '{}' } }] } }] });
+  assert.equal('extra_content' in plain.result().rawToolCalls[0], false, 'other providers get the plain OpenAI shape');
+});

@@ -121,6 +121,8 @@ export function createAccumulator() {
         if (tc.id) calls[i].id = tc.id;
         if (tc.function?.name) calls[i].name += tc.function.name;
         if (tc.function?.arguments) calls[i].arguments += tc.function.arguments;
+        // Gemini 3 puts a thought signature here and rejects the next turn without it.
+        if (tc.extra_content) calls[i].extra = { ...calls[i].extra, ...tc.extra_content };
       }
       return out;
     },
@@ -129,7 +131,12 @@ export function createAccumulator() {
       return {
         text,
         usage,
-        rawToolCalls: present.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments || '{}' } })),
+        rawToolCalls: present.map((c) => ({
+          id: c.id,
+          type: 'function',
+          function: { name: c.name, arguments: c.arguments || '{}' },
+          ...(c.extra ? { extra_content: c.extra } : {}),
+        })),
         toolCalls: present.map((c) => ({ id: c.id, name: c.name, args: safeJson(c.arguments) })),
       };
     },

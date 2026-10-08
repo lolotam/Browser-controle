@@ -5,7 +5,7 @@ import { t } from './i18n.js';
 import { bindSearch, escapeAttr, pickModel, renderPicker } from './model-picker.js';
 
 const TRANSLATED_EFFORTS = { '': 'effort.default', off: 'effort.off', on: 'effort.on' };
-const FALLBACK_EFFORTS = { chatgpt: ['low', 'medium', 'high', 'xhigh'], reasoning_effort: ['off', 'low', 'medium', 'high'], glm: ['on', 'off'], none: [] };
+const FALLBACK_EFFORTS = { chatgpt: ['low', 'medium', 'high', 'xhigh'], reasoning_effort: ['off', 'low', 'medium', 'high'], glm: ['on', 'off'], none: [], gemini: ['minimal', 'low', 'medium', 'high'] };
 
 const slotOf = (s) => (s.provider === 'chatgpt' ? s.chatgpt : s.compatible);
 
