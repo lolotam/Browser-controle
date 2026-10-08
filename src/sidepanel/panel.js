@@ -278,7 +278,7 @@ async function startSessions() {
   const ownTab = await chrome.tabs.getCurrent();
   if (!ownTab) {
     chrome.tabs.onActivated.addListener((info) => {
-      if (info.windowId === windowId) showTabSession(info.tabId);
+      if (info.windowId === windowId) showTabSession(info.tabId).catch(() => {}); // the tab may close mid-lookup
     });
   }
   await showTabSession(ownTab?.id);
@@ -298,6 +298,7 @@ async function showTabSession(tabId) {
 
 /** A session picked by the user (from the list, or a new one) becomes the current tab's. */
 async function chooseSession(id) {
+  tabLookups += 1; // a tab lookup still in flight must not replace the user's pick
   await request('bind-tab', { tabId: await activeTabId(), sessionId: id });
   await openSession(id);
 }

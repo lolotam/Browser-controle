@@ -1,6 +1,6 @@
 // Each browser tab shows its own session in the side panel. A tab belongs to the
-// session whose tab group holds it, else to the session last shown on it; a tab
-// with neither gets a fresh blank session. Bindings live in chrome.storage.session,
+// session last shown on it, else to the session whose tab group holds it (tabs
+// the agent opened); a tab with neither gets a fresh blank session. Bindings live in chrome.storage.session,
 // so they end with the browser, like the tabs they name.
 
 const KEY = 'tabSessions';
@@ -30,11 +30,11 @@ async function updateBindings(change) {
  */
 export function sessionForTab(tab, { ownerOf, exists, createBlank }) {
   return serial(async () => {
-    const owner = await ownerOf(tab);
-    if (owner) return owner;
     const bindings = await readBindings();
     const bound = bindings[tab.id];
     if (bound && (await exists(bound))) return bound;
+    const owner = await ownerOf(tab);
+    if (owner) return owner;
     const id = await createBlank(new Set(Object.values(bindings)));
     await updateBindings((b) => ({ ...b, [tab.id]: id }));
     return id;

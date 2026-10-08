@@ -51,6 +51,13 @@ test('a tab in a session\'s tab group shows that session', async () => {
   assert.equal(await tabSessions.sessionForTab({ id: 5, groupId: 9 }, deps({ 9: 'task-session' })), 'task-session');
 });
 
+test('a session the user picks on a tab in another session\'s group wins over the group', async () => {
+  saved.add('task-session');
+  saved.add('picked');
+  await tabSessions.bindTab(5, 'picked');
+  assert.equal(await tabSessions.sessionForTab({ id: 5, groupId: 9 }, deps({ 9: 'task-session' })), 'picked');
+});
+
 test('a session the user picks becomes the tab\'s session until it is deleted', async () => {
   saved.add('picked');
   await tabSessions.bindTab(3, 'picked');
