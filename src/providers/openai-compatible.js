@@ -8,6 +8,8 @@ const TRIMMED_OBSERVATION_CHARS = 400;
 // Gateways such as Vercel's list image, video and embedding models next to chat
 // models. "evaluation" models (typesafe-ai/jev) are kept, flagged as decision models.
 const NON_CHAT_TYPES = new Set(['embedding', 'image', 'video', 'reranking', 'speech', 'transcription', 'realtime']);
+// Gemini and NVIDIA list embedding and rerank models without a type field.
+const NON_CHAT_ID = /embed|rerank/i;
 
 export async function listCompatibleModels(baseUrl, apiKey) {
   const url = `${trimSlash(baseUrl)}/models`;
@@ -18,8 +20,9 @@ export async function listCompatibleModels(baseUrl, apiKey) {
   if (!res.ok) throw new Error(`Could not load models (HTTP ${res.status}). Type the model id manually.`);
   const body = await res.json();
   return (body.data ?? body.models ?? [])
-    .filter((m) => !NON_CHAT_TYPES.has(m.type))
-    .map((m) => ({ id: m.id ?? m.name, name: m.id ?? m.name, efforts: [], decision: m.type === 'evaluation' }));
+    .map((m) => ({ ...m, id: String(m.id ?? m.name).replace(/^models\//, '') })) // Gemini may prefix ids with "models/"
+    .filter((m) => !NON_CHAT_TYPES.has(m.type) && !NON_CHAT_ID.test(m.id))
+    .map((m) => ({ id: m.id, name: m.id, efforts: [], decision: m.type === 'evaluation' }));
 }
 
 export class CompatibleSession {

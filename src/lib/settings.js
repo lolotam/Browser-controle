@@ -1,11 +1,16 @@
 // User settings persisted in chrome.storage.local.
 
+// Main model and backup providers (both use this list). thinkingStyle 'none' sends
+// no reasoning parameter, for APIs whose models reject reasoning_effort.
 export const COMPATIBLE_PRESETS = {
+  openai: { label: 'OpenAI API key', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5', thinkingStyle: 'reasoning_effort' },
+  gemini: { label: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.8-flash', thinkingStyle: 'reasoning_effort' },
   xai: { label: 'xAI (Grok)', baseUrl: 'https://api.x.ai/v1', model: 'grok-4', thinkingStyle: 'reasoning_effort' },
+  deepseek: { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', thinkingStyle: 'none' },
+  nvidia: { label: 'NVIDIA NIM', baseUrl: 'https://integrate.api.nvidia.com/v1', model: 'nvidia/nemotron-3-super-120b-a12b', thinkingStyle: 'none' },
+  openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-5', thinkingStyle: 'reasoning_effort' },
   'zai-coding': { label: 'Z.ai GLM Coding Plan', baseUrl: 'https://api.z.ai/api/coding/paas/v4', model: 'glm-4.6', thinkingStyle: 'glm' },
   zai: { label: 'Z.ai GLM (API)', baseUrl: 'https://api.z.ai/api/paas/v4', model: 'glm-4.6', thinkingStyle: 'glm' },
-  openai: { label: 'OpenAI API key', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5', thinkingStyle: 'reasoning_effort' },
-  openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-5', thinkingStyle: 'reasoning_effort' },
   custom: { label: 'Custom (OpenAI-compatible)', baseUrl: 'http://localhost:11434/v1', model: '', thinkingStyle: 'reasoning_effort' },
 };
 
@@ -34,6 +39,8 @@ export const DEFAULT_SETTINGS = {
   vision: true,
   allowJavascript: false,
   uiLanguage: 'auto',
+  // Off: the agent replies in the language the task is written in.
+  replyLanguage: { enabled: false, language: '' },
 };
 
 export async function loadSettings() {
@@ -58,6 +65,7 @@ export function mergeSettings(stored = {}) {
       ...(stored.fast ?? {}),
       fallback: { ...DEFAULT_SETTINGS.fast.fallback, ...(stored.fast?.fallback ?? {}) },
     },
+    replyLanguage: { ...DEFAULT_SETTINGS.replyLanguage, ...(stored.replyLanguage ?? {}) },
     fallback: {
       ...DEFAULT_SETTINGS.fallback,
       ...(stored.fallback ?? {}),
