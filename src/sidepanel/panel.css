@@ -94,7 +94,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 
 /* ---------- header ---------- */
 .bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
-.brand { display: flex; align-items: center; gap: 8px; flex: none; }
+.brand { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 0 1 auto; }
 .brand strong { font-weight: 560; white-space: nowrap; }
 .logo { border-radius: 6px; flex: none; }
 @media (prefers-color-scheme: dark) { .logo, .empty-logo { outline: 1px solid var(--border-strong); outline-offset: -1px; } }
@@ -107,6 +107,21 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border-strong); flex: none; }
 .dot.running { background: var(--accent); animation: pulse 1s ease-in-out infinite alternate; }
 @keyframes pulse { to { opacity: .35; } }
+
+/* Session switcher: the title opens a searchable list under the header. */
+.session-btn { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 150px; border: none; background: transparent; padding: 3px 6px; font-weight: 560; }
+.session-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-btn svg { width: 14px; height: 14px; flex: none; color: var(--muted); }
+.session-menu { position: absolute; inset-inline: 8px; top: 46px; z-index: 10; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius-card); padding: 8px; display: flex; flex-direction: column; gap: 6px; max-height: 60vh; }
+#sessionSearch { border-radius: 9999px; padding-inline: 12px; }
+#sessionList { list-style: none; margin: 0; padding: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.session-item { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: var(--radius-control); }
+.session-item.active { background: var(--surface-2); }
+.session-item .session-open { flex: 1; min-width: 0; text-align: start; border: none; background: transparent; padding: 5px 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 0; }
+.session-item button.icon { width: 24px; height: 24px; font-size: 12px; opacity: .7; }
+.session-item button.icon:hover { opacity: 1; }
+.session-rename { flex: 1; padding: 4px 6px; }
+body { position: relative; }
 
 /* Failure notices stay until dismissed, so the user knows a backup is working. */
 .notices { display: flex; flex-direction: column; gap: 4px; padding: 0 10px; }

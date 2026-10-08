@@ -1,29 +1,20 @@
-// Background coordinator: owns the agent run, the browser controller and the
-// provider session, and talks to the side panel over a long-lived port.
+// Background coordinator: routes each side panel to its session's runner,
+// answers settings and model-list requests, and owns the ChatGPT sign-in.
 
-import { runAgent } from '../agent/agent.js';
-import { FallbackSession, handoffMessage } from '../agent/fallback-session.js';
-import { buildSystemPrompt, describeTabContext } from '../agent/prompt.js';
-import { createToolExecutor, toolDefinitions } from '../agent/tools.js';
-import { BrowserController } from '../browser/controller.js';
-import { askWithBackup, fastClientFor } from '../fast/clients.js';
-import { createFastLayer } from '../fast/fast-layer.js';
+import { SessionRunner } from './session-runner.js';
+import { fastClientFor } from '../fast/clients.js';
 import { exportBackup, importBackup } from '../lib/backup.js';
 import { COMPATIBLE_PRESETS, FAST_PRESETS, loadSettings, saveSettings } from '../lib/settings.js';
 import * as chatgptAuth from '../providers/chatgpt-auth.js';
-import { ChatgptSession, listChatgptModels } from '../providers/chatgpt.js';
-import { CompatibleSession, listCompatibleModels } from '../providers/openai-compatible.js';
+import { listChatgptModels } from '../providers/chatgpt.js';
+import { listCompatibleModels } from '../providers/openai-compatible.js';
+import * as store from '../sessions/store.js';
 
-const browser = new BrowserController();
-const ports = new Set();
-const state = {
-  session: null,
-  sessionKey: null,
-  abort: null,
-  pendingQuestion: null,
-  transcript: [],
-  loginAbort: null,
-};
+const GROUP_COLORS = ['cyan', 'blue', 'green', 'yellow', 'purple', 'pink', 'orange', 'red'];
+const runners = new Map(); // sessionId → SessionRunner
+const loading = new Map(); // sessionId → Promise<SessionRunner>
+const panels = new Set(); // every open panel port, for list updates and sign-in errors
+let loginAbort = null;
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 chrome.runtime.onInstalled.addListener(installHeaderRules);
@@ -45,23 +36,47 @@ async function installHeaderRules() {
   await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [1, 2], addRules: rules });
 }
 
-function emit(event) {
-  if (event.type !== 'text-delta' && event.type !== 'reasoning-delta') state.transcript.push(event);
-  for (const port of ports) port.postMessage(event);
+async function runnerFor(sessionId) {
+  if (runners.has(sessionId)) return runners.get(sessionId);
+  if (!loading.has(sessionId)) {
+    loading.set(sessionId, store.loadSession(sessionId).then((loaded) => {
+      if (!loaded?.meta) throw new Error('This session no longer exists.');
+      const runner = new SessionRunner({
+        meta: loaded.meta,
+        body: loaded,
+        color: GROUP_COLORS[runners.size % GROUP_COLORS.length],
+        isTakenByOther,
+        onSessionsChanged: broadcastSessions,
+      });
+      runners.set(sessionId, runner);
+      return runner;
+    }).finally(() => loading.delete(sessionId)));
+  }
+  return loading.get(sessionId);
+}
+
+/** The title of another session that is running a task in this tab's group, or null. */
+function isTakenByOther(selfId, tab) {
+  if (tab.groupId === undefined || tab.groupId < 0) return null;
+  for (const runner of runners.values()) {
+    if (runner.id !== selfId && runner.running && runner.browser.groupId === tab.groupId) return runner.title || 'another session';
+  }
+  return null;
+}
+
+function broadcastSessions() {
+  for (const port of panels) port.postMessage({ type: 'sessions-changed' });
 }
 
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== 'panel') return;
-  ports.add(port);
-  port.postMessage({ type: 'replay', events: state.transcript, running: Boolean(state.abort), question: state.pendingQuestion?.question ?? null });
-  port.onDisconnect.addListener(() => ports.delete(port));
-  port.onMessage.addListener((msg) => {
-    if (msg.type === 'run') startRun(msg.text);
-    else if (msg.type === 'dismiss-notice') emit({ type: 'notice-dismissed', id: msg.id });
-    else if (msg.type === 'stop') state.abort?.abort();
-    else if (msg.type === 'answer') answerQuestion(msg.text);
-    else if (msg.type === 'new-chat') newChat();
-  });
+  const [kind, sessionId] = port.name.split(':');
+  if (kind !== 'panel' || !sessionId) return;
+  panels.add(port);
+  port.onDisconnect.addListener(() => panels.delete(port));
+  runnerFor(sessionId).then(
+    (runner) => runner.attach(port),
+    () => port.postMessage({ type: 'session-missing' }),
+  );
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -87,7 +102,7 @@ async function handleRequest(msg) {
     case 'auth-start':
       return startLogin();
     case 'auth-cancel':
-      state.loginAbort?.abort();
+      loginAbort?.abort();
       return null;
     case 'auth-import':
       await chatgptAuth.importCodexAuthJson(msg.text);
@@ -111,138 +126,65 @@ async function handleRequest(msg) {
       if (settings.provider === 'chatgpt') return listChatgptModels();
       return (await listCompatibleModels(settings.compatible.baseUrl, settings.compatible.apiKey)).filter((m) => !m.decision);
     }
+    case 'sessions-list':
+      return (await store.listSessions()).map((meta) => ({ ...meta, running: Boolean(runners.get(meta.id)?.running) }));
+    case 'session-create': {
+      const meta = await store.createStoredSession();
+      await store.setWindowSession(msg.windowId, meta.id);
+      broadcastSessions();
+      return meta;
+    }
+    case 'session-open':
+      await store.setWindowSession(msg.windowId, msg.id);
+      return null;
+    case 'session-rename':
+      await store.renameSession(msg.id, msg.title);
+      await runners.get(msg.id)?.rename(String(msg.title).trim());
+      broadcastSessions();
+      return null;
+    case 'session-delete':
+      return deleteSession(msg.id);
+    case 'window-session':
+      return sessionForWindow(msg.windowId);
     default:
       throw new Error(`Unknown request ${msg.type}`);
   }
 }
 
+/** The session a window's panel shows: its last one, else the newest, else a new one. */
+async function sessionForWindow(windowId) {
+  const known = await store.getWindowSession(windowId);
+  const list = await store.listSessions();
+  if (known && list.some((s) => s.id === known)) return known;
+  const id = list[0]?.id ?? (await store.createStoredSession()).id;
+  await store.setWindowSession(windowId, id);
+  return id;
+}
+
+async function deleteSession(id) {
+  const runner = runners.get(id);
+  if (runner) {
+    runner.stop();
+    await runner.browser.detachAll();
+    runners.delete(id);
+  }
+  await store.deleteSession(id);
+  broadcastSessions();
+  return null;
+}
+
 async function startLogin() {
-  state.loginAbort?.abort();
+  loginAbort?.abort();
   const device = await chatgptAuth.startDeviceLogin();
   const controller = new AbortController();
-  state.loginAbort = controller;
+  loginAbort = controller;
   await chrome.tabs.create({ url: device.verificationUrl, active: true });
   // fetch/setTimeout polling does not count as activity; without this the worker
   // is killed ~30s in while the user signs in, and the poll silently dies.
   const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo(), 20000);
   // Success reaches the panel through chrome.storage.onChanged; only failures need a message.
   chatgptAuth.completeDeviceLogin(device, controller.signal).finally(() => clearInterval(keepAlive)).catch((err) => {
-    for (const port of ports) port.postMessage({ type: 'auth-error', message: err.message });
+    for (const port of panels) port.postMessage({ type: 'auth-error', message: err.message });
   });
   return { userCode: device.userCode, verificationUrl: device.verificationUrl };
-}
-
-function newChat() {
-  state.abort?.abort();
-  state.session = null;
-  state.sessionKey = null;
-  state.transcript = [];
-  browser.detachAll();
-}
-
-/** A provider session for one model slot: the main one or settings.fallback. */
-function createProviderSession(slot, settings) {
-  const tools = toolDefinitions(settings);
-  const systemPrompt = buildSystemPrompt(settings);
-  if (slot.provider === 'chatgpt') {
-    if (!slot.chatgpt.model) throw new Error('Choose a ChatGPT model in settings first.');
-    return new ChatgptSession({ ...slot.chatgpt, systemPrompt, tools });
-  }
-  const c = slot.compatible;
-  if (!c.model) throw new Error('Choose a model in settings first.');
-  const preset = COMPATIBLE_PRESETS[c.preset] ?? COMPATIBLE_PRESETS.custom;
-  return new CompatibleSession({ ...c, thinkingStyle: preset.thinkingStyle, systemPrompt, tools });
-}
-
-function slotLabel(slot) {
-  if (slot.provider === 'chatgpt') return `ChatGPT · ${slot.chatgpt.model}`;
-  return `${COMPATIBLE_PRESETS[slot.compatible.preset]?.label ?? 'API'} · ${slot.compatible.model}`;
-}
-
-function notify(notice) {
-  emit({ type: 'notice', id: crypto.randomUUID(), ...notice });
-}
-
-/**
- * Each task starts on the primary provider. After a task that switched to the
- * backup, the primary gets the conversation so far as a handoff message.
- */
-function createSession(settings, previous) {
-  const primary = createProviderSession(settings, settings);
-  const log = previous?.log;
-  if (previous?.switched) primary.addUserMessage(handoffMessage(log, 'the previous task was finished by the backup provider'));
-  const backupEnabled = settings.fallback.enabled;
-  return new FallbackSession({
-    primary,
-    createBackup: backupEnabled ? () => createProviderSession(settings.fallback, settings) : null,
-    labels: { primary: slotLabel(settings), backup: backupEnabled ? slotLabel(settings.fallback) : '' },
-    notify,
-    log,
-  });
-}
-
-function fastAsk(fast) {
-  return fast.fallback.enabled && fast.fallback.apiKey
-    ? askWithBackup({ primary: fast, backup: fast.fallback, notify })
-    : fastClientFor(fast);
-}
-
-async function startRun(text) {
-  if (state.abort) {
-    emit({ type: 'error', message: 'A task is already running. Stop it first.' });
-    return;
-  }
-  const abort = new AbortController();
-  state.abort = abort;
-  // Extension API calls reset the service worker idle timer while the model thinks.
-  const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo(), 20000);
-  emit({ type: 'user', text });
-  emit({ type: 'status', running: true });
-  try {
-    const settings = await loadSettings();
-    const key = JSON.stringify([settings.provider, settings.chatgpt, settings.compatible, settings.fallback, settings.vision, settings.allowJavascript]);
-    if (!state.session || state.sessionKey !== key || state.session.switched) {
-      state.session = createSession(settings, state.sessionKey === key ? state.session : null);
-      state.sessionKey = key;
-    }
-    browser.tabId = null; // Each task starts on whatever tab the user is looking at now.
-    const tab = await browser.currentTab().catch(() => null);
-    const execute = createToolExecutor(browser, { askUser: (q) => askUser(q, abort.signal) });
-    const fastLayer = settings.fast.enabled && settings.fast.apiKey
-      ? createFastLayer({ config: settings.fast, browser, execute, task: text, ask: fastAsk(settings.fast) })
-      : null;
-    await runAgent({
-      fastLayer,
-      session: state.session,
-      execute,
-      task: text + describeTabContext(tab),
-      maxSteps: Math.max(1, Number(settings.maxSteps) || 40),
-      signal: abort.signal,
-      emit,
-    });
-  } catch (err) {
-    emit(err.name === 'AbortError' ? { type: 'stopped' } : { type: 'error', message: err.message });
-  } finally {
-    clearInterval(keepAlive);
-    state.abort = null;
-    state.pendingQuestion = null;
-    await browser.detachAll();
-    emit({ type: 'status', running: false });
-  }
-}
-
-function askUser(question, signal) {
-  return new Promise((resolve, reject) => {
-    state.pendingQuestion = { question, resolve };
-    emit({ type: 'ask', question });
-    signal.addEventListener('abort', () => reject(new DOMException('Stopped by user', 'AbortError')), { once: true });
-  });
-}
-
-function answerQuestion(text) {
-  const pending = state.pendingQuestion;
-  if (!pending) return;
-  state.pendingQuestion = null;
-  emit({ type: 'user', text });
-  pending.resolve(text);
 }

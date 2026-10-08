@@ -24,12 +24,16 @@ setLanguage(resolveLanguage('auto', chrome.i18n.getUILanguage()));
 
 // ---------- chat ----------
 
-// The worker can be stopped while the panel stays open, which closes this port.
-// Reconnect lazily on the next message instead of looping on every restart.
+// Each window's panel shows one session; the port name tells the worker which.
+// The worker can be stopped while the panel stays open, which closes the port,
+// so it reconnects lazily on the next message instead of looping on restarts.
 let port = null;
+let sessionId = null;
+let windowId = null;
+let sessionList = [];
 
 function connect() {
-  port = chrome.runtime.connect({ name: 'panel' });
+  port = chrome.runtime.connect({ name: `panel:${sessionId}` });
   port.onMessage.addListener(onEvent);
   port.onDisconnect.addListener(() => { port = null; });
 }
@@ -38,8 +42,6 @@ function send(message) {
   if (!port) connect();
   port.postMessage(message);
 }
-
-connect();
 
 function onEvent(event) {
   switch (event.type) {
@@ -118,6 +120,12 @@ function onEvent(event) {
     case 'notice-dismissed':
       ui.notices = ui.notices.filter((n) => n.id !== event.id);
       renderNotices();
+      break;
+    case 'sessions-changed':
+      refreshSessions();
+      break;
+    case 'session-missing':
+      request('window-session', { windowId }).then(openSession);
       break;
     case 'auth-error':
       $('deviceBox').hidden = true;
@@ -240,15 +248,156 @@ $('input').addEventListener('keydown', (e) => {
   }
 });
 $('stopBtn').addEventListener('click', () => send({ type: 'stop' }));
-$('newChatBtn').addEventListener('click', () => {
-  send({ type: 'new-chat' });
-  clearMessages();
-  $('emptyState').hidden = false;
+$('newChatBtn').addEventListener('click', async () => {
+  const meta = await request('session-create', { windowId });
+  await openSession(meta.id);
 });
 document.querySelectorAll('.examples li').forEach((li) => li.addEventListener('click', () => {
   $('input').value = li.textContent;
   $('input').focus();
 }));
+
+// ---------- sessions ----------
+
+async function startSessions() {
+  windowId = (await chrome.windows.getCurrent()).id;
+  sessionId = await request('window-session', { windowId });
+  connect();
+  await refreshSessions();
+}
+
+async function openSession(id) {
+  closeSessionMenu();
+  if (id === sessionId && port) return;
+  port?.disconnect();
+  port = null;
+  sessionId = id;
+  ui.replayed = false;
+  ui.running = false;
+  clearMessages();
+  $('emptyState').hidden = false;
+  await request('session-open', { windowId, id });
+  connect();
+  renderSessionTitle();
+}
+
+async function refreshSessions() {
+  sessionList = await request('sessions-list');
+  renderSessionTitle();
+  if (!$('sessionMenu').hidden) renderSessionList();
+}
+
+function sessionLabel(meta) {
+  return meta?.title || t('session.untitled');
+}
+
+function renderSessionTitle() {
+  $('sessionTitle').textContent = sessionLabel(sessionList.find((s) => s.id === sessionId));
+}
+
+function renderSessionList() {
+  const query = $('sessionSearch').value.trim().toLowerCase();
+  const shown = sessionList.filter((s) => !query || sessionLabel(s).toLowerCase().includes(query));
+  $('sessionList').replaceChildren(...shown.map(sessionRow));
+}
+
+function sessionRow(meta) {
+  const row = document.createElement('li');
+  row.className = `session-item${meta.id === sessionId ? ' active' : ''}`;
+  row.setAttribute('role', 'option');
+  row.setAttribute('aria-selected', String(meta.id === sessionId));
+  const dot = document.createElement('span');
+  dot.className = `dot${meta.running ? ' running' : ''}`;
+  dot.title = meta.running ? t('session.running') : '';
+  const title = document.createElement('button');
+  title.type = 'button';
+  title.className = 'session-open';
+  // <bdi> keeps an English title readable in the Arabic list without flipping the row's alignment.
+  title.append(Object.assign(document.createElement('bdi'), { textContent: sessionLabel(meta) }));
+  title.addEventListener('click', () => openSession(meta.id));
+  const rename = iconButton(ICONS.rename, t('session.rename'), () => startRename(row, title, meta));
+  const remove = iconButton(ICONS.remove, t('session.delete'), () => deleteSessionAsked(meta));
+  row.append(dot, title, rename, remove);
+  return row;
+}
+
+const ICONS = {
+  rename: 'M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4',
+  remove: 'M5 7h14M10 11v6M14 11v6M7 7l1 12h8l1-12M9 7V4h6v3',
+};
+
+function iconButton(path, label, onClick) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'ghost icon';
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  const shape = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  shape.setAttribute('d', path);
+  svg.append(shape);
+  button.append(svg);
+  button.title = label;
+  button.setAttribute('aria-label', label);
+  button.addEventListener('click', onClick);
+  return button;
+}
+
+function startRename(row, title, meta) {
+  const input = document.createElement('input');
+  input.value = meta.title;
+  input.dir = 'auto';
+  input.className = 'session-rename';
+  let done = false;
+  const finish = async (save) => {
+    if (done) return;
+    done = true;
+    if (save && input.value.trim() && input.value.trim() !== meta.title) await request('session-rename', { id: meta.id, title: input.value });
+    await refreshSessions();
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') finish(true);
+    else if (e.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+  title.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
+async function deleteSessionAsked(meta) {
+  if (!window.confirm(t('session.confirmDelete', { title: sessionLabel(meta) }))) return;
+  await request('session-delete', { id: meta.id });
+  if (meta.id === sessionId) await openSession(await request('window-session', { windowId }));
+  else await refreshSessions();
+}
+
+function toggleSessionMenu() {
+  if ($('sessionMenu').hidden) {
+    $('sessionMenu').hidden = false;
+    $('sessionBtn').setAttribute('aria-expanded', 'true');
+    $('sessionSearch').value = '';
+    renderSessionList();
+    refreshSessions();
+    $('sessionSearch').focus();
+  } else {
+    closeSessionMenu();
+  }
+}
+
+function closeSessionMenu() {
+  $('sessionMenu').hidden = true;
+  $('sessionBtn').setAttribute('aria-expanded', 'false');
+}
+
+$('sessionBtn').addEventListener('click', toggleSessionMenu);
+$('sessionSearch').addEventListener('input', renderSessionList);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('sessionMenu').hidden) closeSessionMenu();
+});
+document.addEventListener('click', (e) => {
+  if (!$('sessionMenu').hidden && !$('sessionMenu').contains(e.target) && !$('sessionBtn').contains(e.target)) closeSessionMenu();
+});
 
 // ---------- language ----------
 
@@ -267,6 +416,7 @@ function applyLanguage(language) {
   mainForm.rerender();
   fallbackForm.rerender();
   renderNotices();
+  renderSessionTitle();
   syncFastProvider();
   syncFastFallback();
 }
@@ -629,4 +779,5 @@ function showSettingsError(message) {
   $('settingsError').hidden = false;
 }
 
+startSessions().catch((err) => showSettingsError(err.message));
 init().catch((err) => showSettingsError(err.message));

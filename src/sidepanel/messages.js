@@ -3,8 +3,14 @@
 
 export const MESSAGES = {
   ar: {
-    'app.title': 'وكيل المتصفح',
-    'header.newChat': 'محادثة جديدة',
+    'header.newChat': 'جلسة جديدة',
+    'session.open': 'الجلسات',
+    'session.untitled': 'جلسة جديدة',
+    'session.search': 'ابحث في الجلسات…',
+    'session.rename': 'إعادة تسمية',
+    'session.delete': 'حذف',
+    'session.running': 'شغالة',
+    'session.confirmDelete': 'حذف جلسة "{title}"؟ لو فيها مهمة شغالة هتقف.',
     'header.settings': 'الإعدادات',
     'lang.switchLabel': 'EN',
     'lang.switchTitle': 'Switch to English',
@@ -99,8 +105,14 @@ export const MESSAGES = {
     'err.request': 'الطلب فشل',
   },
   en: {
-    'app.title': 'Browser Agent',
-    'header.newChat': 'New chat',
+    'header.newChat': 'New session',
+    'session.open': 'Sessions',
+    'session.untitled': 'New session',
+    'session.search': 'Search sessions…',
+    'session.rename': 'Rename',
+    'session.delete': 'Delete',
+    'session.running': 'Running',
+    'session.confirmDelete': 'Delete session "{title}"? A task running in it will stop.',
     'header.settings': 'Settings',
     'lang.switchLabel': 'ع',
     'lang.switchTitle': 'التبديل للعربية',

@@ -111,7 +111,7 @@ function startServer(handlers) {
     req.on('data', (c) => { raw += c; });
     req.on('end', () => {
       try {
-        if (req.url === '/page') {
+        if (req.url === '/page' || req.url.startsWith('/page?')) {
           res.writeHead(200, { 'Content-Type': 'text/html' }).end(PAGE);
         } else if (req.url === '/v1/models') {
           res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ data: [{ id: 'mock-model' }] }));
@@ -172,7 +172,9 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
     await panel.goto(`chrome-extension://${extensionId}/src/sidepanel/index.html`);
     if (name === 'llm') {
       // Settings UI: switching to the compatible provider lists the mock server's models.
-      await panel.waitForSelector('#settingsView:not([hidden])');
+      // Settings open by themselves only while no model is saved, which depends on scenario order.
+      await panel.waitForSelector('#modelChip:not(:empty)');
+      if (await panel.isHidden('#settingsView')) await panel.click('#settingsBtn');
       await panel.selectOption('#provider', 'compatible');
       await panel.selectOption('#preset', 'custom');
       await panel.fill('#baseUrl', `${base}/v1`);
@@ -238,6 +240,75 @@ function fastChecks({ counts, steps, report }) {
   ];
 }
 
+/** One scripted LLM per conversation, keyed by its first user message, so parallel sessions stay apart. */
+function perTask(makeScript) {
+  const scripts = new Map();
+  return (body) => {
+    const first = body.messages.find((m) => m.role === 'user');
+    const key = typeof first.content === 'string' ? first.content : JSON.stringify(first.content);
+    if (!scripts.has(key)) scripts.set(key, makeScript());
+    return scripts.get(key)(body);
+  };
+}
+
+/**
+ * Two sessions run tasks at the same time on two tabs. Each must finish its own
+ * task, and each tab must end up in its own session's tab group.
+ */
+async function runParallelScenario(context, extensionId) {
+  const { server, counts, base } = await startServer({ llm: perTask(scriptedLlm) });
+  const pages = [];
+  const pageErrors = [];
+  try {
+    const openPanel = async () => {
+      const panel = await context.newPage();
+      panel.on('pageerror', (err) => pageErrors.push(err.message));
+      pages.push(panel);
+      await panel.goto(`chrome-extension://${extensionId}/src/sidepanel/index.html`);
+      return panel;
+    };
+    const panelA = await openPanel();
+    await panelA.evaluate((baseUrl) => chrome.storage.local.set({
+      settings: { provider: 'compatible', compatible: { preset: 'custom', baseUrl: `${baseUrl}/v1`, apiKey: '', model: 'mock-model', effort: '' }, fast: { enabled: false }, vision: true, maxSteps: 12 },
+    }), base);
+    await panelA.reload();
+    await panelA.click('#newChatBtn');
+    const panelB = await openPanel();
+    await panelB.click('#newChatBtn');
+
+    const targetA = await context.newPage();
+    await targetA.goto(`${base}/page?s=a`);
+    const targetB = await context.newPage();
+    await targetB.goto(`${base}/page?s=b`);
+    pages.push(targetA, targetB);
+
+    await targetA.bringToFront();
+    await panelA.fill('#input', 'Fill the form and report the result (session A)');
+    await panelA.click('#sendBtn');
+    await panelA.waitForSelector('.step', { timeout: 30000 }); // A has claimed tab A
+    await targetB.bringToFront();
+    await panelB.fill('#input', 'Fill the form and report the result (session B)');
+    await panelB.click('#sendBtn');
+
+    const [reportA, reportB] = await Promise.all([panelA, panelB].map(async (panel) => (await panel.waitForSelector('.msg.final', { timeout: 90000 })).innerText()));
+    const groups = await panelA.evaluate(async () => Object.fromEntries((await chrome.tabs.query({})).filter((t) => t.url.includes('/page')).map((t) => [new URL(t.url).search, t.groupId])));
+    const sessions = await panelA.evaluate(() => chrome.runtime.sendMessage({ type: 'sessions-list' }));
+    console.log(`\n== scenario: parallel ==\nA: ${reportA.replace(/\s+/g, ' ')}\nB: ${reportB.replace(/\s+/g, ' ')}\ngroups ${JSON.stringify(groups)}, sessions ${sessions.result.length}, LLM calls ${counts.llm}`);
+
+    const failures = [];
+    for (const [name, report] of [['A', reportA], ['B', reportB]]) {
+      if (!report.includes('Result: hello world / Blue')) failures.push(`session ${name} report is wrong: ${report}`);
+    }
+    if (!(groups['?s=a'] >= 0 && groups['?s=b'] >= 0 && groups['?s=a'] !== groups['?s=b'])) failures.push(`each tab should be in its own session group, got ${JSON.stringify(groups)}`);
+    if (sessions.result.filter((s) => /session [AB]\)?/.test(s.title) || s.title.startsWith('Fill the form')).length < 2) failures.push('both sessions should be listed with titles from their tasks');
+    if (pageErrors.length) failures.push(`side panel errors: ${pageErrors.join(' | ')}`);
+    return failures;
+  } finally {
+    for (const page of pages) await page.close();
+    server.close();
+  }
+}
+
 async function main() {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-e2e-'));
   const context = await chromium.launchPersistentContext(userDataDir, {
@@ -253,6 +324,7 @@ async function main() {
     const extensionId = new URL(worker.url()).host;
 
     const failures = [
+      ...(await runParallelScenario(context, extensionId)),
       ...(await runScenario(context, extensionId, {
         name: 'llm',
         task: 'Fill the form and report the result',

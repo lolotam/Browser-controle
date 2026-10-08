@@ -11,7 +11,10 @@
   <header class="bar">
     <div class="brand">
       <img class="logo" src="../../icons/logo.svg" alt="" width="22" height="22" />
-      <strong data-i18n="app.title">Browser Agent</strong>
+      <button type="button" class="session-btn" id="sessionBtn" aria-haspopup="listbox" aria-expanded="false" data-i18n-title="session.open">
+        <span id="sessionTitle" dir="auto"></span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+      </button>
       <span class="dot" id="statusDot"></span>
     </div>
     <span class="chip" id="modelChip" dir="ltr">—</span>
@@ -25,6 +28,10 @@
       </button>
     </div>
   </header>
+  <div id="sessionMenu" class="session-menu" hidden>
+    <input id="sessionSearch" type="search" autocomplete="off" data-i18n-placeholder="session.search" />
+    <ul id="sessionList" role="listbox"></ul>
+  </div>
   <div id="notices" class="notices" aria-live="assertive"></div>
 
   <main id="chatView">

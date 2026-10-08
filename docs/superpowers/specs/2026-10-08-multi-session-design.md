@@ -25,11 +25,12 @@ agent drives one tab and brings it to the front when switching.
 
 `chrome.storage.local` (the extension already has `unlimitedStorage`):
 
-- `sessions`: index `[{ id, title, createdAt, updatedAt, groupId }]`.
-- `session:<id>`: `{ transcript, providerHistory, tabIds }`. The transcript is
-  the panel's event list (no screenshots). `providerHistory` is the serialized
-  `ChatgptSession.input` or `CompatibleSession.messages` with images removed,
-  so a reopened session continues where it stopped.
+- `sessions`: index `[{ id, title, titled, createdAt, updatedAt }]` (`titled` turns true once the first task or the user names it).
+- `session:<id>`: `{ transcript, log, groupId }`. The transcript is the panel's
+  event list (no screenshots). `log` is the provider-neutral log the fallback
+  wrapper keeps; a reopened session continues through a handoff message built
+  from it. (Implementation note: this replaced a planned `providerHistory`, which
+  would have tied a saved session to one provider's message format.)
 - `panelSession:<windowId>`: which session each window shows.
 
 Titles default to the first 6 words of the first task and can be renamed.
