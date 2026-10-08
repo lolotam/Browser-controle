@@ -1,8 +1,8 @@
-import { test } from 'node:test';
+import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { askGatewayDecision } from '../src/fast/gateway-decision-client.js';
 import { askChatJudge } from '../src/fast/chat-judge-client.js';
-import { fastClientFor } from '../src/fast/clients.js';
+import { askWithBackup, fastClientFor } from '../src/fast/clients.js';
 import { askJev } from '../src/fast/jev-client.js';
 
 const questions = {
@@ -61,4 +61,53 @@ test('the fast layer picks its client from the provider and the model kind', () 
   assert.equal(fastClientFor({ provider: 'typesafe' }), askJev);
   assert.equal(fastClientFor({ provider: 'vercel', decision: true }), askGatewayDecision);
   assert.equal(fastClientFor({ provider: 'openrouter', decision: false }), askChatJudge);
+});
+
+describe('fast-layer backup', () => {
+  const request = { state: { GOAL: 'g' }, questions, signal: undefined };
+  const answer = (model) => ({ answers: {}, model });
+  const setup = (primaryBehaviour) => {
+    const seen = [];
+    const notices = [];
+    const clients = {
+      vercel: async (req) => { seen.push(['vercel', req.apiKey, req.state]); return primaryBehaviour(); },
+      typesafe: async (req) => { seen.push(['typesafe', req.apiKey, req.state]); return answer('jev-latest'); },
+    };
+    const ask = askWithBackup({
+      primary: { provider: 'vercel', apiKey: 'vk', model: 'typesafe-ai/jev' },
+      backup: { provider: 'typesafe', apiKey: 'tk', model: 'jev-latest' },
+      notify: (n) => notices.push(n),
+      clientFor: (fast) => clients[fast.provider],
+    });
+    return { ask, seen, notices };
+  };
+
+  test('a healthy primary answers alone', async () => {
+    const { ask, seen, notices } = setup(() => answer('typesafe-ai/jev'));
+    assert.equal((await ask(request)).model, 'typesafe-ai/jev');
+    assert.deepEqual(seen.map((s) => s[0]), ['vercel']);
+    assert.equal(notices.length, 0);
+  });
+
+  test('a failing primary is answered by the backup for the same step, with one warning per task', async () => {
+    const { ask, seen, notices } = setup(() => { throw new Error('Fast layer request failed (HTTP 403): denied'); });
+    assert.equal((await ask(request)).model, 'jev-latest');
+    await ask(request);
+    assert.deepEqual(seen[1], ['typesafe', 'tk', { GOAL: 'g' }]);
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0].level, 'warning');
+    assert.equal(notices[0].code, 'auth');
+  });
+
+  test('after three primary failures the primary is skipped for the rest of the task', async () => {
+    const { ask, seen } = setup(() => { throw new Error('HTTP 500'); });
+    for (let i = 0; i < 5; i += 1) await ask(request);
+    assert.equal(seen.filter((s) => s[0] === 'vercel').length, 3);
+    assert.equal(seen.filter((s) => s[0] === 'typesafe').length, 5);
+  });
+
+  test('without a backup the primary error comes through', async () => {
+    const ask = askWithBackup({ primary: { provider: 'vercel' }, backup: null, notify: () => {}, clientFor: () => async () => { throw new Error('HTTP 401'); } });
+    await assert.rejects(ask(request), /HTTP 401/);
+  });
 });
