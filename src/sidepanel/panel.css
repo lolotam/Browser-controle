@@ -13,6 +13,9 @@
   --on-accent: #000000;
   --accent-text: #0b8f78;
   --danger: #d93636;
+  --danger-bg: #fdecec;
+  --success: #15803d;
+  --success-bg: #e9f8ef;
   --warn: #b26a00;
   --radius-card: 8px;
   --radius-control: 6px;
@@ -32,6 +35,9 @@
     --muted: #8a8f98;
     --accent-text: #4ff7d1;
     --danger: #ff6b6b;
+    --danger-bg: #2a1414;
+    --success: #4ade80;
+    --success-bg: #0f2a1a;
     --warn: #f0b04a;
     color-scheme: dark;
   }
@@ -179,4 +185,9 @@ details[open] { display: flex; flex-direction: column; gap: 6px; }
 .fields { display: flex; flex-direction: column; gap: 10px; }
 .grow { flex: 1; min-width: 0; }
 .model-search { border-radius: 9999px; padding-inline: 12px; }
+#fastTestBtn { white-space: nowrap; flex: none; }
+#fastTestBtn[data-state="ok"] { background: var(--success-bg); border-color: var(--success); color: var(--success); }
+#fastTestBtn[data-state="fail"] { background: var(--danger-bg); border-color: var(--danger); color: var(--danger); }
+#fastTestResult[data-state="ok"] { color: var(--success); }
+#fastTestResult[data-state="fail"] { color: var(--danger); }
 .sticky-actions { position: sticky; bottom: 0; background: var(--bg); padding: 10px 0 12px; border-top: 1px solid var(--border); }

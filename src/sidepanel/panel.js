@@ -387,19 +387,31 @@ async function loadFastModels(showErrors = false) {
     if (load !== loads.fast) return;
     fastModels = list;
     renderPicker($('fastModelSelect'), $('fastModel'), fastModels, $('fastModelSearch'));
-    $('fastTestResult').textContent = list.length ? '' : t('fast.noDecisionModels');
+    showFastStatus('', list.length ? '' : t('fast.noDecisionModels'));
   } catch (err) {
-    if (load === loads.fast && showErrors) $('fastTestResult').textContent = `✗ ${err.message}`;
+    if (load === loads.fast && showErrors) showFastStatus('fail', `✗ ${err.message}`);
   }
 }
+/** state: 'ok' (green), 'fail' (red) or '' (neutral); the button and the message share it. */
+function showFastStatus(state, text) {
+  $('fastTestBtn').dataset.state = state;
+  $('fastTestResult').dataset.state = state;
+  $('fastTestResult').textContent = text;
+}
+
+// A pass or fail describes the settings that were tested; editing them makes it stale.
+['input', 'change'].forEach((type) => $('fastFields').addEventListener(type, (e) => {
+  if (e.target !== $('fastTestBtn') && $('fastTestBtn').dataset.state) showFastStatus('', '');
+}));
+
 $('fastTestBtn').addEventListener('click', async () => {
-  $('fastTestResult').textContent = t('fast.testing');
+  showFastStatus('', t('fast.testing'));
   const started = performance.now();
   try {
     const { model } = await request('fast-test', { config: readFastForm() });
-    $('fastTestResult').textContent = t('fast.testOk', { model, ms: Math.round(performance.now() - started) });
+    showFastStatus('ok', t('fast.testOk', { model, ms: Math.round(performance.now() - started) }));
   } catch (err) {
-    $('fastTestResult').textContent = `✗ ${err.message}`;
+    showFastStatus('fail', `✗ ${err.message}`);
   }
 });
 
