@@ -68,7 +68,8 @@ test('the fast layer picks its client from the provider and the model kind', () 
   assert.equal(fastClientFor({ provider: 'typesafe' }), askJev);
   assert.equal(fastClientFor({ provider: 'opencode-zen', decision: true }), askJev, 'Zen serves Jev on the same /v1/systemone API');
   assert.equal(fastClientFor({ provider: 'vercel', decision: true }), askGatewayDecision);
-  assert.equal(fastClientFor({ provider: 'openrouter', decision: false }), askChatJudge);
+  assert.equal(fastClientFor({ provider: 'openrouter', decision: true }), askJev, 'OpenRouter serves Jev on /api/v1/systemone');
+  assert.equal(fastClientFor({ provider: 'vercel', decision: false }), askChatJudge);
 });
 
 describe('fast-layer backup', () => {

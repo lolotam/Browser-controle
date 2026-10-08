@@ -9,6 +9,7 @@ import * as chatgptAuth from '../providers/chatgpt-auth.js';
 import { listChatgptModels } from '../providers/chatgpt.js';
 import { listCompatibleModels } from '../providers/openai-compatible.js';
 import * as store from '../sessions/store.js';
+import * as tabSessions from '../sessions/tab-sessions.js';
 
 const GROUP_COLORS = ['cyan', 'blue', 'green', 'yellow', 'purple', 'pink', 'orange', 'red'];
 const runners = new Map(); // sessionId → SessionRunner
@@ -23,6 +24,7 @@ let loginAbort = null;
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 chrome.runtime.onInstalled.addListener(installHeaderRules);
 chrome.runtime.onStartup.addListener(installHeaderRules);
+chrome.tabs.onRemoved.addListener((tabId) => tabSessions.unbindTab(tabId));
 
 // Requests from an extension carry an Origin header the Codex backend does not
 // expect from its CLI; strip it for the two OpenAI hosts this extension calls.
@@ -124,8 +126,11 @@ async function handleRequest(msg) {
       });
       return { model, noul: answers.greeting?.noul ?? null };
     }
-    case 'list-fast-models':
+    case 'list-fast-models': {
+      const fixed = FAST_PRESETS[msg.config.provider]?.models;
+      if (fixed) return fixed.map((id) => ({ id, name: id, efforts: [], decision: true }));
       return (await listCompatibleModels(msg.config.baseUrl, msg.config.apiKey)).filter((m) => m.decision);
+    }
     case 'list-models': {
       const settings = msg.settings ?? (await loadSettings());
       if (settings.provider === 'chatgpt') return listChatgptModels();
@@ -146,22 +151,32 @@ async function handleRequest(msg) {
       return null;
     case 'session-delete':
       return deleteSession(msg.id);
-    case 'blank-session':
-      return blankSession();
+    case 'tab-session':
+      return sessionForTab(await chrome.tabs.get(msg.tabId));
+    case 'bind-tab':
+      return tabSessions.bindTab(msg.tabId, msg.sessionId);
     default:
       throw new Error(`Unknown request ${msg.type}`);
   }
 }
 
+function sessionForTab(tab) {
+  return tabSessions.sessionForTab(tab, {
+    ownerOf: (t) => [...runners.values()].find((r) => r.browser.ownsTab(t))?.id ?? null,
+    exists: async (id) => (await store.listSessions()).some((s) => s.id === id),
+    createBlank: blankSession,
+  });
+}
+
 /**
- * A panel that opens starts on a fresh session; running sessions are one click
- * away in the list. An empty session no panel shows is reused so opening the
- * panel repeatedly does not pile up blank sessions.
+ * A fresh session for a tab that has none. An empty session no panel shows and no
+ * other tab is bound to (`excluded`) is reused, so opening tabs does not pile up
+ * blank sessions.
  */
-async function blankSession() {
+async function blankSession(excluded = new Set()) {
   const unused = (await store.listSessions()).find((s) => {
     const runner = runners.get(s.id);
-    return !s.titled && !reserved.has(s.id) && !runner?.running && !runner?.ports.size;
+    return !s.titled && !reserved.has(s.id) && !excluded.has(s.id) && !runner?.running && !runner?.ports.size;
   });
   const id = unused?.id ?? (await store.createStoredSession()).id;
   reserved.add(id);
@@ -177,6 +192,7 @@ async function deleteSession(id) {
     runners.delete(id);
   }
   await store.deleteSession(id);
+  await tabSessions.unbindSession(id);
   broadcastSessions();
   return null;
 }

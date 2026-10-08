@@ -9,7 +9,7 @@ const FALLBACK_EFFORTS = { chatgpt: ['low', 'medium', 'high', 'xhigh'], reasonin
 
 const slotOf = (s) => (s.provider === 'chatgpt' ? s.chatgpt : s.compatible);
 
-export function createProviderForm(root, { request, getPresets }) {
+export function createProviderForm(root, { request, getPresets, keyStore }) {
   const f = (name) => root.querySelector(`[data-field="${name}"]`);
   // Last filled values; also remembers the other provider's model while switching.
   let saved = null;
@@ -96,6 +96,7 @@ export function createProviderForm(root, { request, getPresets }) {
   f('preset').addEventListener('change', () => {
     const preset = getPresets()[f('preset').value];
     f('baseUrl').value = preset.baseUrl;
+    keyStore.show(f('apiKey'), f('preset').value, saved.compatible.preset === f('preset').value ? saved.compatible.apiKey : '');
     f('modelInput').value = preset.model;
     models = [];
     renderModels();
@@ -108,6 +109,7 @@ export function createProviderForm(root, { request, getPresets }) {
   });
   f('modelInput').addEventListener('input', () => renderEfforts(f('effort').value));
   f('refresh').addEventListener('click', () => loadModels(true));
+  keyStore.register(f('apiKey'), () => f('preset').value);
   bindSearch(f('modelSearch'), f('modelSelect'), () => models, renderModels);
 
   return {
