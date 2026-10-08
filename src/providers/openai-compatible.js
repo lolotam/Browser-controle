@@ -22,7 +22,7 @@ export async function listCompatibleModels(baseUrl, apiKey) {
   return (body.data ?? body.models ?? [])
     .map((m) => ({ ...m, id: String(m.id ?? m.name).replace(/^models\//, '') })) // Gemini may prefix ids with "models/"
     .filter((m) => !NON_CHAT_TYPES.has(m.type) && !NON_CHAT_ID.test(m.id))
-    .map((m) => ({ id: m.id, name: m.id, efforts: [], decision: m.type === 'evaluation' }));
+    .map((m) => ({ id: m.id, name: m.id, efforts: [], decision: m.type === 'evaluation' || /^jev-/.test(m.id) }));
 }
 
 export class CompatibleSession {

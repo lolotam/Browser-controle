@@ -152,3 +152,18 @@ test('model lists drop embedding and rerank models and the "models/" prefix Gemi
 test('reply language defaults to following the task language', () => {
   assert.deepEqual(mergeSettings({}).replyLanguage, { enabled: false, language: '' });
 });
+
+test('OpenCode presets list only the models served on /chat/completions', async () => {
+  const { chatModelsFor } = await import('../src/lib/settings.js');
+  const zen = ['glm-5.3', 'kimi-k3', 'gpt-6-sol', 'grok-4.7', 'claude-opus-5-5', 'gemini-3.8-flash', 'qwen3.8-max', 'qwen3.8-flash', 'minimax-m3', 'jev-1.13', 'big-pickle'].map((id) => ({ id }));
+  assert.deepEqual(chatModelsFor('opencode-zen', zen).map((m) => m.id), ['glm-5.3', 'kimi-k3', 'qwen3.8-max', 'minimax-m3', 'big-pickle']);
+  const go = ['glm-5.3', 'kimi-k3', 'gpt-6-luna', 'claude-haiku-5-5', 'qwen3.8-max', 'minimax-m3', 'deepseek-v4-pro'].map((id) => ({ id }));
+  assert.deepEqual(chatModelsFor('opencode-go', go).map((m) => m.id), ['glm-5.3', 'kimi-k3', 'deepseek-v4-pro']);
+  assert.equal(chatModelsFor('openai', zen).length, zen.length, 'other presets are not filtered');
+});
+
+test('Jev models in a gateway list count as decision models', async () => {
+  globalThis.fetch = async () => Response.json({ data: [{ id: 'jev-1.13' }, { id: 'jev-1.13-free' }, { id: 'glm-5.3' }] });
+  const models = await listCompatibleModels('https://opencode.ai/zen/v1', 'k');
+  assert.deepEqual(models.filter((m) => m.decision).map((m) => m.id), ['jev-1.13', 'jev-1.13-free']);
+});

@@ -9,15 +9,33 @@ export const COMPATIBLE_PRESETS = {
   deepseek: { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', thinkingStyle: 'none' },
   nvidia: { label: 'NVIDIA NIM', baseUrl: 'https://integrate.api.nvidia.com/v1', model: 'nvidia/nemotron-3-super-120b-a12b', thinkingStyle: 'none' },
   openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-5', thinkingStyle: 'reasoning_effort' },
+  'opencode-zen': { label: 'OpenCode Zen', baseUrl: 'https://opencode.ai/zen/v1', model: 'glm-5.3', thinkingStyle: 'none' },
+  'opencode-go': { label: 'OpenCode Go', baseUrl: 'https://opencode.ai/zen/go/v1', model: 'glm-5.3', thinkingStyle: 'none' },
   'zai-coding': { label: 'Z.ai GLM Coding Plan', baseUrl: 'https://api.z.ai/api/coding/paas/v4', model: 'glm-4.6', thinkingStyle: 'glm' },
   zai: { label: 'Z.ai GLM (API)', baseUrl: 'https://api.z.ai/api/paas/v4', model: 'glm-4.6', thinkingStyle: 'glm' },
   custom: { label: 'Custom (OpenAI-compatible)', baseUrl: 'http://localhost:11434/v1', model: '', thinkingStyle: 'reasoning_effort' },
 };
 
+// OpenCode serves each model family on its own endpoint (docs, Oct 2026): GPT, Grok
+// and Muse on /responses, Claude, some Qwen and (on Go) MiniMax on /messages,
+// Gemini on Google's path, Jev on /systemone. The agent speaks /chat/completions,
+// so those families are left out of the list until those APIs are supported.
+const NOT_CHAT_COMPLETIONS = {
+  'opencode-zen': /^(gpt-|grok-|muse-spark|claude-|gemini-|jev-|qwen3\.(8-flash|7-|6-|5-))/,
+  'opencode-go': /^(gpt-|grok-|muse-spark|claude-|qwen|minimax-)/,
+};
+
+export function chatModelsFor(presetId, models) {
+  const excluded = NOT_CHAT_COMPLETIONS[presetId];
+  return excluded ? models.filter((m) => !excluded.test(m.id)) : models;
+}
+
 // Fast-layer providers serve decision models (Jev). OpenRouter has none.
 export const FAST_PRESETS = {
   typesafe: { label: 'TypeSafe Jev', baseUrl: 'https://api.typesafe.ai', model: 'jev-latest', minProb: 0.6, decision: true },
   vercel: { label: 'Vercel AI Gateway', baseUrl: 'https://ai-gateway.vercel.sh/v1', model: 'typesafe-ai/jev', minProb: 0.6, decision: true },
+  // Zen serves Jev on TypeSafe's own /v1/systemone API under its base URL.
+  'opencode-zen': { label: 'OpenCode Zen', baseUrl: 'https://opencode.ai/zen', model: 'jev-1.13', minProb: 0.6, decision: true },
 };
 
 export const DEFAULT_SETTINGS = {
