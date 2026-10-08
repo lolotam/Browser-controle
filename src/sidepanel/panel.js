@@ -471,12 +471,49 @@ $('googleSignInBtn').addEventListener('click', async () => {
   $('accountStatus').textContent = t('account.signingIn');
   try {
     account = await signInWithGoogle();
-    $('accountStatus').textContent = '';
     renderAccount();
+    $('accountStatus').textContent = t('drive.working');
+    const { restored, available } = await request('drive-after-sign-in');
+    if (restored) await showRestoredSettings(restored);
+    if (restored) $('accountStatus').textContent = t('drive.restored');
+    else if (available) $('accountStatus').textContent = t('drive.available', { time: `⁨${new Date(available).toLocaleString(currentLanguage())}⁩` });
+    else $('accountStatus').textContent = '';
   } catch (err) {
     $('accountStatus').textContent = `✗ ${err.message}`;
   }
 });
+$('driveBackupBtn').addEventListener('click', () => driveAction(() => request('drive-backup-now')));
+$('driveRestoreBtn').addEventListener('click', () => {
+  if (!window.confirm(t('drive.confirmRestore'))) return;
+  driveAction(async () => {
+    await showRestoredSettings(await request('drive-restore'));
+    $('accountStatus').textContent = t('drive.restored');
+  });
+});
+
+async function driveAction(run) {
+  $('accountStatus').textContent = t('drive.working');
+  try {
+    await run();
+    if ($('accountStatus').textContent === t('drive.working')) $('accountStatus').textContent = '';
+  } catch (err) {
+    $('accountStatus').textContent = `✗ ${err.message}`;
+  }
+}
+
+let driveState = {};
+
+function renderDriveState(state = driveState) {
+  driveState = state ?? {};
+  if (driveState.error) $('driveStatus').textContent = t('drive.failed', { reason: driveState.error });
+  else if (driveState.at) $('driveStatus').textContent = t('drive.saved', { time: `⁨${new Date(driveState.at).toLocaleString(currentLanguage())}⁩` }) // isolated, or bidi scrambles the date inside Arabic text;
+  else $('driveStatus').textContent = t('drive.none');
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.driveBackup) renderDriveState(changes.driveBackup.newValue);
+});
+chrome.storage.local.get('driveBackup').then(({ driveBackup }) => renderDriveState(driveBackup));
 $('googleSignOutBtn').addEventListener('click', async () => {
   await signOutOfGoogle();
   account = null;
@@ -641,6 +678,7 @@ function applyLanguage(language) {
   renderSessionTitle();
   syncFastProvider();
   syncFastFallback();
+  renderDriveState();
 }
 
 // ---------- settings ----------
@@ -672,6 +710,7 @@ async function init() {
   presets = data.presets;
   fastPresets = data.fastPresets;
   setLanguage(resolveLanguage(settings.uiLanguage, chrome.i18n.getUILanguage()));
+  renderDriveState();
   // The fast layer and its backup offer the same decision providers.
   const fastOptions = Object.entries(fastPresets).map(([id, p]) => `<option value="${id}">${escapeAttr(p.label)}</option>`).join('');
   $('fastProvider').innerHTML = fastOptions;
@@ -933,11 +972,7 @@ $('restoreFile').addEventListener('change', async () => {
   if (!file) return;
   try {
     const data = JSON.parse(await file.text());
-    settings = await request('backup-import', { data });
-    fillForm();
-    updateChip();
-    showAuth(await request('auth-status'));
-    mainForm.loadModels();
+    await showRestoredSettings(await request('backup-import', { data }));
     showBackupStatus('ok', t('backup.restored'));
   } catch (err) {
     showBackupStatus('fail', `✗ ${err instanceof SyntaxError ? t('backup.notJson') : err.message}`);
@@ -945,6 +980,15 @@ $('restoreFile').addEventListener('change', async () => {
     $('restoreFile').value = '';
   }
 });
+
+/** After a restore from a file or from Drive, the settings view shows what was restored. */
+async function showRestoredSettings(restored) {
+  settings = restored;
+  fillForm();
+  updateChip();
+  showAuth(await request('auth-status'));
+  mainForm.loadModels();
+}
 
 function showBackupStatus(state, text) {
   $('backupResult').dataset.state = state;

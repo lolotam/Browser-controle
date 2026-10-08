@@ -130,6 +130,10 @@ body { position: relative; }
 .account-menu .row { gap: 10px; align-items: center; }
 .account-who { display: flex; flex-direction: column; min-width: 0; }
 .account-who small { overflow: hidden; text-overflow: ellipsis; }
+#accountSignedIn { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+#accountSignedIn[hidden] { display: none; }
+.drive { display: flex; flex-direction: column; gap: 4px; padding-block: 6px; border-block: 1px solid var(--border); width: 100%; }
+.drive .row { gap: 4px; }
 .avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; }
 .avatar.large { width: 36px; height: 36px; }
 .feedback-menu textarea, .rate-card textarea { resize: vertical; }

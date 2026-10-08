@@ -10,6 +10,8 @@ import { listChatgptModels } from '../providers/chatgpt.js';
 import { listCompatibleModels } from '../providers/openai-compatible.js';
 import * as store from '../sessions/store.js';
 import * as tabSessions from '../sessions/tab-sessions.js';
+import { afterGoogleSignIn, backUpToDrive, restoreFromDrive } from '../lib/drive-backup.js';
+import { googleAccount } from '../lib/google-account.js';
 
 const GROUP_COLORS = ['cyan', 'blue', 'green', 'yellow', 'purple', 'pink', 'orange', 'red'];
 const runners = new Map(); // sessionId → SessionRunner
@@ -19,12 +21,21 @@ const panels = new Set(); // every open panel port, for list updates and sign-in
 // at once must not both get the same one.
 const reserved = new Set();
 const RESERVATION_MS = 10000;
+const DRIVE_BACKUP_DELAY_MS = 3000; // one upload for a burst of changes (a save writes several keys)
+let driveBackupTimer = null;
 let loginAbort = null;
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 chrome.runtime.onInstalled.addListener(installHeaderRules);
 chrome.runtime.onStartup.addListener(installHeaderRules);
 chrome.tabs.onRemoved.addListener((tabId) => tabSessions.unbindTab(tabId));
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !(changes.settings || changes.chatgptAuth)) return;
+  clearTimeout(driveBackupTimer);
+  driveBackupTimer = setTimeout(async () => {
+    if (await googleAccount()) await backUpToDrive();
+  }, DRIVE_BACKUP_DELAY_MS);
+});
 
 // Requests from an extension carry an Origin header the Codex backend does not
 // expect from its CLI; strip it for the two OpenAI hosts this extension calls.
@@ -151,6 +162,12 @@ async function handleRequest(msg) {
       return null;
     case 'session-delete':
       return deleteSession(msg.id);
+    case 'drive-after-sign-in':
+      return afterGoogleSignIn();
+    case 'drive-backup-now':
+      return backUpToDrive();
+    case 'drive-restore':
+      return restoreFromDrive();
     case 'tab-session':
       return sessionForTab(await chrome.tabs.get(msg.tabId));
     case 'bind-tab':

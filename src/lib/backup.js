@@ -1,6 +1,7 @@
-// Settings, API keys and the ChatGPT sign-in as one JSON file the user keeps.
-// Chrome deletes an extension's storage when it is removed, so this file is
-// what survives a remove-and-reinstall.
+// Settings, API keys and the ChatGPT sign-in as one JSON document. Chrome deletes
+// an extension's storage when it is removed, so this document is what survives a
+// remove-and-reinstall: as a file the user keeps, or in their Google Drive
+// (drive-backup.js).
 
 import { mergeSettings } from './settings.js';
 
