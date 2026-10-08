@@ -11,7 +11,7 @@ export const COMPATIBLE_PRESETS = {
 
 export const DEFAULT_SETTINGS = {
   provider: 'chatgpt',
-  chatgpt: { model: '', effort: '', clientVersion: '0.99.0' },
+  chatgpt: { model: '', effort: '' },
   compatible: { preset: 'xai', baseUrl: COMPATIBLE_PRESETS.xai.baseUrl, apiKey: '', model: COMPATIBLE_PRESETS.xai.model, effort: '' },
   fast: { enabled: false, mode: 'auto', baseUrl: 'https://api.typesafe.ai', apiKey: '', model: 'jev-latest', minProb: 0.6, riskyMax: 0.3 },
   maxSteps: 40,

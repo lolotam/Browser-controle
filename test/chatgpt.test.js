@@ -14,7 +14,7 @@ globalThis.chrome = {
 };
 
 const { startDeviceLogin, completeDeviceLogin, getAuthStatus } = await import('../src/providers/chatgpt-auth.js');
-const { ChatgptSession } = await import('../src/providers/chatgpt.js');
+const { ChatgptSession, listChatgptModels } = await import('../src/providers/chatgpt.js');
 
 const jwt = (claims) => `h.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.s`;
 const accessToken = jwt({ exp: Math.floor(Date.now() / 1000) + 3600, 'https://api.openai.com/auth': { chatgpt_account_id: 'acc_9' } });
@@ -58,6 +58,18 @@ test('device login exchanges the approved code and stores identity', async () =>
   assert.equal(form.get('code_verifier'), 'ver1');
   assert.equal(form.get('redirect_uri'), 'https://auth.openai.com/deviceauth/callback');
   assert.deepEqual(await getAuthStatus(), { connected: true, email: 'me@x.y', planType: 'pro', accountId: 'acc_9' });
+});
+
+// Regression 2026-10: client_version=0.99.0 got only a hidden model back, so the
+// model list showed empty right after a successful ChatGPT sign-in.
+test('model list asks as a current Codex client so newer models are not filtered out', async () => {
+  store.chatgptAuth = { accessToken, refreshToken: 'rt', accountId: 'acc_9', expiresAt: Date.now() + 3600e3 };
+  stubFetch(() => Response.json({ models: [{ slug: 'gpt-6-sol', display_name: 'GPT-6 Sol', visibility: 'list', priority: 1 }] }));
+  const models = await listChatgptModels();
+
+  const [, minor] = new URL(calls[0].url).searchParams.get('client_version').split('.').map(Number);
+  assert.ok(minor >= 160, 'older clients get the newer models filtered out');
+  assert.deepEqual(models.map((m) => m.id), ['gpt-6-sol']);
 });
 
 test('ChatgptSession streams a Responses turn with the subscription headers', async () => {

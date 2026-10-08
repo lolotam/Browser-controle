@@ -5,6 +5,9 @@ import { readSse } from '../lib/sse.js';
 import { getValidAuth } from './chatgpt-auth.js';
 
 const BASE_URL = 'https://chatgpt.com/backend-api/codex';
+// The backend drops models newer than the asking client, so this must track the
+// current Codex CLI release (`codex --version`), not live in user settings.
+const CODEX_CLIENT_VERSION = '0.160.1';
 const KEEP_FULL_OBSERVATIONS = 2;
 const TRIMMED_OBSERVATION_CHARS = 400;
 
@@ -16,8 +19,8 @@ async function authHeaders(forceRefresh = false) {
 }
 
 /** Lists the models the signed-in plan can use, with their reasoning levels. */
-export async function listChatgptModels(clientVersion) {
-  const url = `${BASE_URL}/models?client_version=${encodeURIComponent(clientVersion || '0.99.0')}`;
+export async function listChatgptModels() {
+  const url = `${BASE_URL}/models?client_version=${CODEX_CLIENT_VERSION}`;
   let res = await fetch(url, { credentials: 'omit', headers: await authHeaders() });
   if (res.status === 401) res = await fetch(url, { credentials: 'omit', headers: await authHeaders(true) });
   if (!res.ok) throw new Error(`Could not load models (HTTP ${res.status}).`);
