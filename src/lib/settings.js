@@ -1,18 +1,42 @@
 // User settings persisted in chrome.storage.local.
 
+// Main model and backup providers (both use this list). thinkingStyle 'none' sends
+// no reasoning parameter, for APIs whose models reject reasoning_effort; 'gemini'
+// offers no Off, because Gemini 3 thinking cannot be turned off.
 export const COMPATIBLE_PRESETS = {
+  openai: { label: 'OpenAI API key', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5', thinkingStyle: 'reasoning_effort' },
+  gemini: { label: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.8-flash', thinkingStyle: 'gemini' },
   xai: { label: 'xAI (Grok)', baseUrl: 'https://api.x.ai/v1', model: 'grok-4', thinkingStyle: 'reasoning_effort' },
+  deepseek: { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', thinkingStyle: 'none' },
+  nvidia: { label: 'NVIDIA NIM', baseUrl: 'https://integrate.api.nvidia.com/v1', model: 'nvidia/nemotron-3-super-120b-a12b', thinkingStyle: 'none' },
+  openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-5', thinkingStyle: 'reasoning_effort' },
+  'opencode-zen': { label: 'OpenCode Zen', baseUrl: 'https://opencode.ai/zen/v1', model: 'glm-5.3', thinkingStyle: 'none' },
+  'opencode-go': { label: 'OpenCode Go', baseUrl: 'https://opencode.ai/zen/go/v1', model: 'glm-5.3', thinkingStyle: 'none' },
   'zai-coding': { label: 'Z.ai GLM Coding Plan', baseUrl: 'https://api.z.ai/api/coding/paas/v4', model: 'glm-4.6', thinkingStyle: 'glm' },
   zai: { label: 'Z.ai GLM (API)', baseUrl: 'https://api.z.ai/api/paas/v4', model: 'glm-4.6', thinkingStyle: 'glm' },
-  openai: { label: 'OpenAI API key', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5', thinkingStyle: 'reasoning_effort' },
-  openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-5', thinkingStyle: 'reasoning_effort' },
   custom: { label: 'Custom (OpenAI-compatible)', baseUrl: 'http://localhost:11434/v1', model: '', thinkingStyle: 'reasoning_effort' },
 };
+
+// OpenCode serves each model family on its own endpoint (docs, Oct 2026): GPT, Grok
+// and Muse on /responses, Claude, some Qwen and (on Go) MiniMax on /messages,
+// Gemini on Google's path, Jev on /systemone. The agent speaks /chat/completions,
+// so those families are left out of the list until those APIs are supported.
+const NOT_CHAT_COMPLETIONS = {
+  'opencode-zen': /^(gpt-|grok-|muse-spark|claude-|gemini-|jev-|qwen3\.(8-flash|7-|6-|5-))/,
+  'opencode-go': /^(gpt-|grok-|muse-spark|claude-|qwen|minimax-)/,
+};
+
+export function chatModelsFor(presetId, models) {
+  const excluded = NOT_CHAT_COMPLETIONS[presetId];
+  return excluded ? models.filter((m) => !excluded.test(m.id)) : models;
+}
 
 // Fast-layer providers serve decision models (Jev). OpenRouter has none.
 export const FAST_PRESETS = {
   typesafe: { label: 'TypeSafe Jev', baseUrl: 'https://api.typesafe.ai', model: 'jev-latest', minProb: 0.6, decision: true },
   vercel: { label: 'Vercel AI Gateway', baseUrl: 'https://ai-gateway.vercel.sh/v1', model: 'typesafe-ai/jev', minProb: 0.6, decision: true },
+  // Zen serves Jev on TypeSafe's own /v1/systemone API under its base URL.
+  'opencode-zen': { label: 'OpenCode Zen', baseUrl: 'https://opencode.ai/zen', model: 'jev-1.13', minProb: 0.6, decision: true },
 };
 
 export const DEFAULT_SETTINGS = {
@@ -34,6 +58,8 @@ export const DEFAULT_SETTINGS = {
   vision: true,
   allowJavascript: false,
   uiLanguage: 'auto',
+  // Off: the agent replies in the language the task is written in.
+  replyLanguage: { enabled: false, language: '' },
 };
 
 export async function loadSettings() {
@@ -58,6 +84,7 @@ export function mergeSettings(stored = {}) {
       ...(stored.fast ?? {}),
       fallback: { ...DEFAULT_SETTINGS.fast.fallback, ...(stored.fast?.fallback ?? {}) },
     },
+    replyLanguage: { ...DEFAULT_SETTINGS.replyLanguage, ...(stored.replyLanguage ?? {}) },
     fallback: {
       ...DEFAULT_SETTINGS.fallback,
       ...(stored.fallback ?? {}),

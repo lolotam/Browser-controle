@@ -4,7 +4,7 @@
 import { SessionRunner } from './session-runner.js';
 import { fastClientFor } from '../fast/clients.js';
 import { exportBackup, importBackup } from '../lib/backup.js';
-import { COMPATIBLE_PRESETS, FAST_PRESETS, loadSettings, saveSettings } from '../lib/settings.js';
+import { COMPATIBLE_PRESETS, FAST_PRESETS, chatModelsFor, loadSettings, saveSettings } from '../lib/settings.js';
 import * as chatgptAuth from '../providers/chatgpt-auth.js';
 import { listChatgptModels } from '../providers/chatgpt.js';
 import { listCompatibleModels } from '../providers/openai-compatible.js';
@@ -129,7 +129,8 @@ async function handleRequest(msg) {
     case 'list-models': {
       const settings = msg.settings ?? (await loadSettings());
       if (settings.provider === 'chatgpt') return listChatgptModels();
-      return (await listCompatibleModels(settings.compatible.baseUrl, settings.compatible.apiKey)).filter((m) => !m.decision);
+      const list = (await listCompatibleModels(settings.compatible.baseUrl, settings.compatible.apiKey)).filter((m) => !m.decision);
+      return chatModelsFor(settings.compatible.preset, list);
     }
     case 'sessions-list':
       return (await store.listSessions()).map((meta) => ({ ...meta, running: Boolean(runners.get(meta.id)?.running) }));

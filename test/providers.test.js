@@ -136,3 +136,48 @@ test('settings saved before backups existed get disabled backups, and partial ba
   assert.equal(partial.fast.fallback.apiKey, 'tk');
   assert.equal(partial.fast.fallback.model, 'jev-latest');
 });
+
+test('model lists drop embedding and rerank models and the "models/" prefix Gemini may return', async () => {
+  globalThis.fetch = async () => Response.json({ data: [
+    { id: 'models/gemini-3.8-flash' },
+    { id: 'models/gemini-embedding-001' },
+    { id: 'nvidia/nemotron-3-embed-1b' },
+    { id: 'nvidia/llama-3.2-nv-rerankqa-1b-v2' },
+    { id: 'nvidia/nemotron-3-super-120b-a12b' },
+  ] });
+  const models = await listCompatibleModels('https://generativelanguage.googleapis.com/v1beta/openai', 'k');
+  assert.deepEqual(models.map((m) => m.id), ['gemini-3.8-flash', 'nvidia/nemotron-3-super-120b-a12b']);
+});
+
+test('reply language defaults to following the task language', () => {
+  assert.deepEqual(mergeSettings({}).replyLanguage, { enabled: false, language: '' });
+});
+
+test('OpenCode presets list only the models served on /chat/completions', async () => {
+  const { chatModelsFor } = await import('../src/lib/settings.js');
+  const zen = ['glm-5.3', 'kimi-k3', 'gpt-6-sol', 'grok-4.7', 'claude-opus-5-5', 'gemini-3.8-flash', 'qwen3.8-max', 'qwen3.8-flash', 'minimax-m3', 'jev-1.13', 'big-pickle'].map((id) => ({ id }));
+  assert.deepEqual(chatModelsFor('opencode-zen', zen).map((m) => m.id), ['glm-5.3', 'kimi-k3', 'qwen3.8-max', 'minimax-m3', 'big-pickle']);
+  const go = ['glm-5.3', 'kimi-k3', 'gpt-6-luna', 'claude-haiku-5-5', 'qwen3.8-max', 'minimax-m3', 'deepseek-v4-pro'].map((id) => ({ id }));
+  assert.deepEqual(chatModelsFor('opencode-go', go).map((m) => m.id), ['glm-5.3', 'kimi-k3', 'deepseek-v4-pro']);
+  assert.equal(chatModelsFor('openai', zen).length, zen.length, 'other presets are not filtered');
+});
+
+test('Jev models in a gateway list count as decision models', async () => {
+  globalThis.fetch = async () => Response.json({ data: [{ id: 'jev-1.13' }, { id: 'jev-1.13-free' }, { id: 'glm-5.3' }] });
+  const models = await listCompatibleModels('https://opencode.ai/zen/v1', 'k');
+  assert.deepEqual(models.filter((m) => m.decision).map((m) => m.id), ['jev-1.13', 'jev-1.13-free']);
+});
+
+// Review 2026-10 (Codex P1): Gemini 3 answers 400 on the next turn when a tool call
+// comes back without the thought signature it carried.
+test('tool calls keep provider extras such as the Gemini thought signature', () => {
+  const acc = createAccumulator();
+  acc.push({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', type: 'function', function: { name: 'click', arguments: '' }, extra_content: { google: { thought_signature: 'sig-1' } } }] } }] });
+  acc.push({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"index":2}' } }] } }] });
+  const [call] = acc.result().rawToolCalls;
+  assert.deepEqual(call, { id: 'c1', type: 'function', function: { name: 'click', arguments: '{"index":2}' }, extra_content: { google: { thought_signature: 'sig-1' } } });
+
+  const plain = createAccumulator();
+  plain.push({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c2', function: { name: 'read_page', arguments: '{}' } }] } }] });
+  assert.equal('extra_content' in plain.result().rawToolCalls[0], false, 'other providers get the plain OpenAI shape');
+});

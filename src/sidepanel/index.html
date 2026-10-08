@@ -20,6 +20,9 @@
     <span class="chip" id="modelChip" dir="ltr">—</span>
     <div class="actions">
       <button type="button" class="ghost lang" id="langBtn" data-i18n="lang.switchLabel" data-i18n-title="lang.switchTitle">ع</button>
+      <button type="button" class="ghost icon" id="feedbackBtn" aria-haspopup="dialog" data-i18n-title="feedback.open">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z" /><path d="M8 9h8M8 12h5" /></svg>
+      </button>
       <button type="button" class="ghost icon" id="newChatBtn" data-i18n-title="header.newChat">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
       </button>
@@ -31,6 +34,16 @@
   <div id="sessionMenu" class="session-menu" hidden>
     <input id="sessionSearch" type="search" autocomplete="off" data-i18n-placeholder="session.search" />
     <ul id="sessionList" role="listbox"></ul>
+  </div>
+  <div id="feedbackMenu" class="session-menu feedback-menu" role="dialog" hidden>
+    <strong data-i18n="feedback.title"></strong>
+    <div class="stars" id="feedbackStars"></div>
+    <textarea id="feedbackText" rows="4" dir="auto" data-i18n-placeholder="feedback.placeholder"></textarea>
+    <input id="feedbackEmail" type="email" dir="ltr" autocomplete="email" data-i18n-placeholder="feedback.email" />
+    <div class="row between">
+      <small class="muted" id="feedbackStatus"></small>
+      <button type="button" class="primary" id="feedbackSend" data-i18n="feedback.send"></button>
+    </div>
   </div>
   <div id="notices" class="notices" aria-live="assertive"></div>
 
@@ -166,6 +179,19 @@
       </label>
       <label class="check"><input type="checkbox" id="vision" /> <span data-i18n="settings.vision"></span></label>
       <label class="check"><input type="checkbox" id="allowJavascript" /> <span data-i18n="settings.javascript"></span></label>
+    </div>
+
+    <div class="card">
+      <label class="check switch"><input type="checkbox" id="replyLangEnabled" role="switch" /> <strong data-i18n="replyLang.title"></strong></label>
+      <p class="muted" data-i18n="replyLang.desc"></p>
+      <label class="field" id="replyLangField">
+        <span data-i18n="replyLang.label"></span>
+        <select id="replyLang">
+          <option value="" disabled data-i18n="replyLang.pick"></option>
+          <option value="ar">العربية</option>
+          <option value="en">English</option>
+        </select>
+      </label>
     </div>
 
     <div class="card">
