@@ -105,7 +105,7 @@ function scriptedGatewayJev() {
 }
 
 function startServer(handlers) {
-  const counts = { llm: 0, jev: 0, judge: 0, decision: 0 };
+  const counts = { llm: 0, jev: 0, judge: 0, decision: 0, backup: 0 };
   const server = http.createServer((req, res) => {
     let raw = '';
     req.on('data', (c) => { raw += c; });
@@ -115,8 +115,9 @@ function startServer(handlers) {
           res.writeHead(200, { 'Content-Type': 'text/html' }).end(PAGE);
         } else if (req.url === '/v1/models') {
           res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ data: [{ id: 'mock-model' }] }));
-        } else if (req.url === '/v1/chat/completions') {
+        } else if (req.url === '/v1/chat/completions' || req.url === '/b1/chat/completions') {
           const body = JSON.parse(raw);
+          const isBackup = req.url.startsWith('/b1/');
           if (body.response_format) {
             counts.judge += 1;
             if (req.headers.authorization !== 'Bearer judge-key') throw new Error('missing judge key');
@@ -124,9 +125,15 @@ function startServer(handlers) {
             res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ model: 'mock-judge', choices: [{ message: { role: 'assistant', content } }] }));
             return;
           }
-          counts.llm += 1;
-          const [name, args] = handlers.llm(body);
-          const id = `call_${counts.llm}`;
+          if (isBackup) counts.backup += 1;
+          else counts.llm += 1;
+          const scripted = (isBackup ? handlers.backup : handlers.llm)(body);
+          if (scripted === 'quota') {
+            res.writeHead(429, { 'Content-Type': 'application/json' }).end('{"error":{"message":"You exceeded your current quota"}}');
+            return;
+          }
+          const [name, args] = scripted;
+          const id = `call_${isBackup ? 'b' : ''}${counts.llm + counts.backup}`;
           const chunks = [
             { choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name, arguments: '' } }] } }] },
             { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify(args) } }] } }] },
@@ -172,15 +179,16 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
       await panel.click('#refreshModelsBtn');
       await panel.waitForFunction(() => [...document.querySelectorAll('#modelSelect option')].some((o) => o.value === 'mock-model'));
     }
-    await panel.evaluate(([baseUrl, fastConfig]) => chrome.storage.local.set({
+    await panel.evaluate(([baseUrl, fastConfig, fallback]) => chrome.storage.local.set({
       settings: {
+        ...(fallback ? { fallback: { enabled: true, provider: 'compatible', compatible: { preset: 'custom', baseUrl: `${baseUrl}/b1`, apiKey: '', model: 'mock-backup', effort: '' } } } : {}),
         provider: 'compatible',
         compatible: { preset: 'custom', baseUrl: `${baseUrl}/v1`, apiKey: '', model: 'mock-model', effort: '' },
         fast: fastConfig ?? { enabled: false },
         vision: true,
         maxSteps: 12,
       },
-    }), [base, fast?.(base)]);
+    }), [base, fast?.(base), Boolean(handlers.backup)]);
     await panel.reload();
     await panel.click('#newChatBtn');
 
@@ -204,13 +212,21 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
     if (!report.includes(expectReport)) failures.push(`report missing "${expectReport}" (page shows "${pageResult}")`);
     if (steps.some((s) => s.includes('✗'))) failures.push('a tool step failed');
     if (pageErrors.length) failures.push(`side panel errors: ${pageErrors.join(' | ')}`);
-    failures.push(...check({ counts, steps, report }));
+    const notices = await panel.$$eval('.notice.error', (rows) => rows.map((r) => r.innerText));
+    if (notices.length) console.log(`notices: ${notices.join(' | ')}`);
+    failures.push(...check({ counts, steps, report, notices }));
     await target.close();
     return failures;
   } finally {
     await panel.close();
     server.close();
   }
+}
+
+/** Primary model that answers once, then reports its quota as exhausted. */
+function quotaAfterFirstTurn() {
+  let turn = 0;
+  return () => (turn++ === 0 ? ['read_page', {}] : 'quota');
 }
 
 /** Shared by both fast scenarios: two fast steps, then exactly one LLM call for the report. */
@@ -243,6 +259,16 @@ async function main() {
         handlers: { llm: scriptedLlm() },
         expectReport: 'Result: hello world / Blue',
         check: ({ report }) => (report.includes('screenshot seen: true') ? [] : ['screenshot never reached the model']),
+      })),
+      ...(await runScenario(context, extensionId, {
+        name: 'fallback',
+        task: 'Fill the form and report the result',
+        handlers: { llm: quotaAfterFirstTurn(), backup: scriptedLlm() },
+        expectReport: 'Result: hello world / Blue',
+        check: ({ counts, notices }) => [
+          ...(counts.llm === 2 && counts.backup >= 6 ? [] : [`expected 2 primary calls then the backup (primary ${counts.llm}, backup ${counts.backup})`]),
+          ...(notices.length === 1 && /mock-backup/.test(notices[0]) ? [] : [`expected one red notice naming the backup, got ${JSON.stringify(notices)}`]),
+        ],
       })),
       ...(await runScenario(context, extensionId, {
         name: 'fast',

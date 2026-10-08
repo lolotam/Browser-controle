@@ -2,10 +2,11 @@
 // provider session, and talks to the side panel over a long-lived port.
 
 import { runAgent } from '../agent/agent.js';
+import { FallbackSession, handoffMessage } from '../agent/fallback-session.js';
 import { buildSystemPrompt, describeTabContext } from '../agent/prompt.js';
 import { createToolExecutor, toolDefinitions } from '../agent/tools.js';
 import { BrowserController } from '../browser/controller.js';
-import { fastClientFor } from '../fast/clients.js';
+import { askWithBackup, fastClientFor } from '../fast/clients.js';
 import { createFastLayer } from '../fast/fast-layer.js';
 import { COMPATIBLE_PRESETS, FAST_PRESETS, loadSettings, saveSettings } from '../lib/settings.js';
 import * as chatgptAuth from '../providers/chatgpt-auth.js';
@@ -55,6 +56,7 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onDisconnect.addListener(() => ports.delete(port));
   port.onMessage.addListener((msg) => {
     if (msg.type === 'run') startRun(msg.text);
+    else if (msg.type === 'dismiss-notice') emit({ type: 'notice-dismissed', id: msg.id });
     else if (msg.type === 'stop') state.abort?.abort();
     else if (msg.type === 'answer') answerQuestion(msg.text);
     else if (msg.type === 'new-chat') newChat();
@@ -133,17 +135,51 @@ function newChat() {
   browser.detachAll();
 }
 
-function createSession(settings) {
+/** A provider session for one model slot: the main one or settings.fallback. */
+function createProviderSession(slot, settings) {
   const tools = toolDefinitions(settings);
   const systemPrompt = buildSystemPrompt(settings);
-  if (settings.provider === 'chatgpt') {
-    if (!settings.chatgpt.model) throw new Error('Choose a ChatGPT model in settings first.');
-    return new ChatgptSession({ ...settings.chatgpt, systemPrompt, tools });
+  if (slot.provider === 'chatgpt') {
+    if (!slot.chatgpt.model) throw new Error('Choose a ChatGPT model in settings first.');
+    return new ChatgptSession({ ...slot.chatgpt, systemPrompt, tools });
   }
-  const c = settings.compatible;
+  const c = slot.compatible;
   if (!c.model) throw new Error('Choose a model in settings first.');
   const preset = COMPATIBLE_PRESETS[c.preset] ?? COMPATIBLE_PRESETS.custom;
   return new CompatibleSession({ ...c, thinkingStyle: preset.thinkingStyle, systemPrompt, tools });
+}
+
+function slotLabel(slot) {
+  if (slot.provider === 'chatgpt') return `ChatGPT · ${slot.chatgpt.model}`;
+  return `${COMPATIBLE_PRESETS[slot.compatible.preset]?.label ?? 'API'} · ${slot.compatible.model}`;
+}
+
+function notify(notice) {
+  emit({ type: 'notice', id: crypto.randomUUID(), ...notice });
+}
+
+/**
+ * Each task starts on the primary provider. After a task that switched to the
+ * backup, the primary gets the conversation so far as a handoff message.
+ */
+function createSession(settings, previous) {
+  const primary = createProviderSession(settings, settings);
+  const log = previous?.log;
+  if (previous?.switched) primary.addUserMessage(handoffMessage(log, 'the previous task was finished by the backup provider'));
+  const backupEnabled = settings.fallback.enabled;
+  return new FallbackSession({
+    primary,
+    createBackup: backupEnabled ? () => createProviderSession(settings.fallback, settings) : null,
+    labels: { primary: slotLabel(settings), backup: backupEnabled ? slotLabel(settings.fallback) : '' },
+    notify,
+    log,
+  });
+}
+
+function fastAsk(fast) {
+  return fast.fallback.enabled && fast.fallback.apiKey
+    ? askWithBackup({ primary: fast, backup: fast.fallback, notify })
+    : fastClientFor(fast);
 }
 
 async function startRun(text) {
@@ -159,16 +195,16 @@ async function startRun(text) {
   emit({ type: 'status', running: true });
   try {
     const settings = await loadSettings();
-    const key = JSON.stringify([settings.provider, settings.chatgpt, settings.compatible, settings.vision, settings.allowJavascript]);
-    if (!state.session || state.sessionKey !== key) {
-      state.session = createSession(settings);
+    const key = JSON.stringify([settings.provider, settings.chatgpt, settings.compatible, settings.fallback, settings.vision, settings.allowJavascript]);
+    if (!state.session || state.sessionKey !== key || state.session.switched) {
+      state.session = createSession(settings, state.sessionKey === key ? state.session : null);
       state.sessionKey = key;
     }
     browser.tabId = null; // Each task starts on whatever tab the user is looking at now.
     const tab = await browser.currentTab().catch(() => null);
     const execute = createToolExecutor(browser, { askUser: (q) => askUser(q, abort.signal) });
     const fastLayer = settings.fast.enabled && settings.fast.apiKey
-      ? createFastLayer({ config: settings.fast, browser, execute, task: text, ask: fastClientFor(settings.fast) })
+      ? createFastLayer({ config: settings.fast, browser, execute, task: text, ask: fastAsk(settings.fast) })
       : null;
     await runAgent({
       fastLayer,

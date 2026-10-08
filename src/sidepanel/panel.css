@@ -17,6 +17,7 @@
   --success: #15803d;
   --success-bg: #e9f8ef;
   --warn: #b26a00;
+  --warn-bg: #fff6e5;
   --radius-card: 8px;
   --radius-control: 6px;
   --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Tahoma, sans-serif;
@@ -39,6 +40,7 @@
     --success: #4ade80;
     --success-bg: #0f2a1a;
     --warn: #f0b04a;
+    --warn-bg: #2a2110;
     color-scheme: dark;
   }
 }
@@ -105,6 +107,15 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border-strong); flex: none; }
 .dot.running { background: var(--accent); animation: pulse 1s ease-in-out infinite alternate; }
 @keyframes pulse { to { opacity: .35; } }
+
+/* Failure notices stay until dismissed, so the user knows a backup is working. */
+.notices { display: flex; flex-direction: column; gap: 4px; padding: 0 10px; }
+.notices:not(:empty) { padding-top: 6px; }
+.notice { display: flex; gap: 6px; align-items: flex-start; font-size: 11.5px; line-height: 1.45; border: 1px solid; border-radius: var(--radius-card); padding: 5px 4px 5px 9px; }
+.notice span { flex: 1; padding-top: 2px; }
+.notice button.icon { width: 22px; height: 22px; color: inherit; font-size: 15px; }
+.notice.error { background: var(--danger-bg); border-color: var(--danger); color: var(--danger); }
+.notice.warning { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
 
 /* ---------- chat ---------- */
 main { flex: 1; display: flex; flex-direction: column; min-height: 0; }

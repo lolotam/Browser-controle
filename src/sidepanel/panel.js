@@ -10,7 +10,8 @@ const request = async (type, payload = {}) => {
   return res.result;
 };
 
-const ui = { running: false, question: null, liveText: null, liveReasoning: null, trace: null, steps: new Map(), replayed: false };
+const ui = { running: false, question: null, liveText: null, liveReasoning: null, trace: null, steps: new Map(), replayed: false, notices: [] };
+const MAX_NOTICES = 3;
 let settings = null;
 let presets = {};
 let fastPresets = {};
@@ -110,6 +111,14 @@ function onEvent(event) {
     case 'stopped':
       add('msg error', t('msg.stopped'));
       break;
+    case 'notice':
+      ui.notices.push(event);
+      renderNotices();
+      break;
+    case 'notice-dismissed':
+      ui.notices = ui.notices.filter((n) => n.id !== event.id);
+      renderNotices();
+      break;
     case 'auth-error':
       $('deviceBox').hidden = true;
       showSettingsError(event.message);
@@ -154,6 +163,31 @@ function clearMessages() {
   $('messages').querySelectorAll('.msg, .trace, .handoff').forEach((n) => n.remove());
   ui.steps.clear();
   ui.trace = null;
+  ui.notices = [];
+  renderNotices();
+}
+
+const NOTICE_TEXT = { switched: 'notice.switched', 'both-failed': 'notice.bothFailed', 'fast-switched': 'notice.fastSwitched' };
+
+/** Newest first; the full provider error is in the tooltip. */
+function renderNotices() {
+  $('notices').replaceChildren(...ui.notices.slice(-MAX_NOTICES).reverse().map((notice) => {
+    const reason = notice.code && notice.code !== 'other' ? t(`failure.${notice.code}`) : notice.reason;
+    const row = document.createElement('div');
+    row.className = `notice ${notice.level}`;
+    row.title = notice.detail ?? '';
+    row.dir = 'auto';
+    const text = document.createElement('span');
+    text.textContent = `⚠ ${t(NOTICE_TEXT[notice.kind] ?? 'notice.switched', { from: notice.from ?? '', to: notice.to ?? '', reason })}`;
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'ghost icon';
+    close.textContent = '×';
+    close.setAttribute('aria-label', t('notice.dismiss'));
+    close.addEventListener('click', () => send({ type: 'dismiss-notice', id: notice.id }));
+    row.append(text, close);
+    return row;
+  }));
 }
 
 function setQuestion(question) {
@@ -232,6 +266,7 @@ function applyLanguage(language) {
   updateChip();
   mainForm.rerender();
   fallbackForm.rerender();
+  renderNotices();
   syncFastProvider();
   syncFastFallback();
 }
