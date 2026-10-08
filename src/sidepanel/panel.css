@@ -168,7 +168,7 @@ main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .card { border: 1px solid var(--border); border-radius: var(--radius-card); padding: 12px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 10px; }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field > span { font-weight: 560; font-size: 11.5px; color: var(--text-2); }
-#settingsView > .field { margin-bottom: 12px; }
+#mainProvider > .field { margin-bottom: 12px; }
 .check { display: flex; gap: 8px; align-items: flex-start; }
 .check input { width: auto; margin-top: 4px; accent-color: var(--accent-text); }
 .row { display: flex; gap: 8px; align-items: center; }
@@ -185,6 +185,7 @@ details[open] { display: flex; flex-direction: column; gap: 6px; }
 .fields { display: flex; flex-direction: column; gap: 10px; }
 .grow { flex: 1; min-width: 0; }
 .model-search { border-radius: 9999px; padding-inline: 12px; }
+.sub-card { border: 1px dashed var(--border-strong); border-radius: var(--radius-card); padding: 10px; display: flex; flex-direction: column; gap: 10px; }
 #fastTestBtn { white-space: nowrap; flex: none; }
 #fastTestBtn[data-state="ok"] { background: var(--success-bg); border-color: var(--success); color: var(--success); }
 #fastTestBtn[data-state="fail"] { background: var(--danger-bg); border-color: var(--danger); color: var(--danger); }

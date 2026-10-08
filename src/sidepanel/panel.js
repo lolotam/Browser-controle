@@ -1,5 +1,7 @@
 import { renderMarkdown } from './markdown.js';
 import { currentLanguage, resolveLanguage, setLanguage, t } from './i18n.js';
+import { bindSearch, escapeAttr, pickModel, renderPicker } from './model-picker.js';
+import { createProviderForm } from './provider-form.js';
 
 const $ = (id) => document.getElementById(id);
 const request = async (type, payload = {}) => {
@@ -8,18 +10,13 @@ const request = async (type, payload = {}) => {
   return res.result;
 };
 
-const TRANSLATED_EFFORTS = { '': 'effort.default', off: 'effort.off', on: 'effort.on' };
-const FALLBACK_EFFORTS = { chatgpt: ['low', 'medium', 'high', 'xhigh'], reasoning_effort: ['off', 'low', 'medium', 'high'], glm: ['on', 'off'] };
-
 const ui = { running: false, question: null, liveText: null, liveReasoning: null, trace: null, steps: new Map(), replayed: false };
 let settings = null;
 let presets = {};
 let fastPresets = {};
-let models = [];
 let fastModels = [];
-const CUSTOM_MODEL = '__custom__';
-const SEARCH_FROM = 12; // lists longer than this get a search box
-const loads = { main: 0, fast: 0 }; // newest request wins when lists load concurrently
+let fastFallbackModels = [];
+const loads = { fast: 0, fastFallback: 0 }; // newest request wins when lists load concurrently
 let authStatus = { connected: false };
 
 setLanguage(resolveLanguage('auto', chrome.i18n.getUILanguage()));
@@ -233,12 +230,16 @@ function applyLanguage(language) {
   if (!settings) return;
   showAuth(authStatus);
   updateChip();
-  renderModels();
+  mainForm.rerender();
+  fallbackForm.rerender();
   syncFastProvider();
-  renderEfforts($('effort').value);
+  syncFastFallback();
 }
 
 // ---------- settings ----------
+
+const mainForm = createProviderForm($('mainProvider'), { request, getPresets: () => presets });
+const fallbackForm = createProviderForm($('fallbackProvider'), { request, getPresets: () => presets });
 
 $('settingsBtn').addEventListener('click', () => toggleSettings(true));
 $('closeSettingsBtn').addEventListener('click', () => toggleSettings(false));
@@ -248,8 +249,10 @@ function toggleSettings(open) {
   $('chatView').hidden = open;
   $('settingsError').hidden = true;
   if (open) {
-    loadModels();
+    mainForm.loadModels();
+    if ($('fallbackEnabled').checked) fallbackForm.loadModels();
     loadFastModels();
+    loadFastFallbackModels();
   }
 }
 
@@ -259,13 +262,14 @@ async function init() {
   presets = data.presets;
   fastPresets = data.fastPresets;
   setLanguage(resolveLanguage(settings.uiLanguage, chrome.i18n.getUILanguage()));
-  $('preset').innerHTML = Object.entries(presets).map(([id, p]) => `<option value="${id}">${p.label}</option>`).join('');
-  $('fastProvider').innerHTML = Object.entries(fastPresets).map(([id, p]) => `<option value="${id}">${p.label}</option>`).join('');
+  $('fastProvider').innerHTML = Object.entries(fastPresets).map(([id, p]) => `<option value="${id}">${escapeAttr(p.label)}</option>`).join('');
+  $('fastFallbackProvider').innerHTML = Object.entries(fastPresets).filter(([, p]) => p.decision)
+    .map(([id, p]) => `<option value="${id}">${escapeAttr(p.label)}</option>`).join('');
   fillForm();
   showAuth(await request('auth-status'));
   updateChip();
   if (!activeModel()) toggleSettings(true);
-  loadModels();
+  mainForm.loadModels();
   loadFastModels();
 }
 
@@ -276,41 +280,40 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
   showAuth(await request('auth-status'));
   if (changes.chatgptAuth.newValue) {
     $('deviceBox').hidden = true;
-    loadModels();
+    mainForm.loadModels();
   }
 });
 
 function fillForm() {
-  $('provider').value = settings.provider;
-  $('preset').value = settings.compatible.preset;
-  $('baseUrl').value = settings.compatible.baseUrl;
-  $('apiKey').value = settings.compatible.apiKey;
+  mainForm.fill(settings);
+  fallbackForm.fill(settings.fallback);
+  $('fallbackEnabled').checked = settings.fallback.enabled;
+  syncFallback();
   $('maxSteps').value = settings.maxSteps;
   $('vision').checked = settings.vision;
   $('allowJavascript').checked = settings.allowJavascript;
-  $('modelInput').value = activeModel();
-  renderModels();
   fillFastForm(settings.fast);
-  syncSections();
-  renderEfforts(currentProviderSettings().effort);
 }
 
 function readForm() {
-  const provider = $('provider').value;
   const next = structuredClone(settings);
-  next.provider = provider;
-  next.compatible.preset = $('preset').value;
-  next.compatible.baseUrl = $('baseUrl').value.trim();
-  next.compatible.apiKey = $('apiKey').value.trim();
-  const target = provider === 'chatgpt' ? next.chatgpt : next.compatible;
-  target.model = $('modelInput').value.trim();
-  target.effort = $('effort').value;
+  Object.assign(next, mainForm.read());
+  next.fallback = { ...fallbackForm.read(), enabled: $('fallbackEnabled').checked };
   next.fast = readFastForm();
   next.maxSteps = Number($('maxSteps').value) || 40;
   next.vision = $('vision').checked;
   next.allowJavascript = $('allowJavascript').checked;
   return next;
 }
+
+function syncFallback() {
+  $('fallbackProvider').hidden = !$('fallbackEnabled').checked;
+}
+
+$('fallbackEnabled').addEventListener('change', () => {
+  syncFallback();
+  if ($('fallbackEnabled').checked) fallbackForm.loadModels();
+});
 
 function fillFastForm(fast) {
   $('fastEnabled').checked = fast.enabled;
@@ -321,8 +324,13 @@ function fillFastForm(fast) {
   $('fastBaseUrl').value = fast.baseUrl;
   $('fastMinProb').value = fast.minProb;
   $('fastRiskyMax').value = fast.riskyMax;
+  $('fastFallbackEnabled').checked = fast.fallback.enabled;
+  $('fastFallbackProvider').value = fast.fallback.provider;
+  $('fastFallbackApiKey').value = fast.fallback.apiKey;
+  $('fastFallbackModel').value = fast.fallback.model;
   syncFast();
   syncFastProvider();
+  syncFastFallback();
 }
 
 function readFastForm() {
@@ -339,6 +347,21 @@ function readFastForm() {
     baseUrl: $('fastBaseUrl').value.trim() || preset.baseUrl,
     minProb: Number($('fastMinProb').value) || preset.minProb,
     riskyMax: Number($('fastRiskyMax').value) || 0.3,
+    fallback: readFastFallback(),
+  };
+}
+
+// Backups are decision providers only (TypeSafe or Vercel), so the base URL is the preset's.
+function readFastFallback() {
+  const provider = $('fastFallbackProvider').value;
+  const preset = fastPresets[provider] ?? {};
+  return {
+    enabled: $('fastFallbackEnabled').checked,
+    provider,
+    baseUrl: preset.baseUrl,
+    apiKey: $('fastFallbackApiKey').value.trim(),
+    model: $('fastFallbackModel').value.trim() || preset.model,
+    decision: true,
   };
 }
 
@@ -357,11 +380,26 @@ function syncFast() {
 
 // TypeSafe has no model list endpoint; every OpenAI-compatible provider does.
 function syncFastProvider() {
-  const listed = $('fastProvider').value !== 'typesafe';
-  $('fastModelsBtn').hidden = !listed;
-  $('fastModelSelect').hidden = !listed;
-  if (listed) renderPicker($('fastModelSelect'), $('fastModel'), fastModels, $('fastModelSearch'));
-  else $('fastModel').hidden = false;
+  syncListedPicker($('fastProvider').value, fastPickerEls(), fastModels);
+}
+
+function syncFastFallback() {
+  $('fastFallbackFields').hidden = !$('fastFallbackEnabled').checked;
+  syncListedPicker($('fastFallbackProvider').value, fastFallbackPickerEls(), fastFallbackModels);
+}
+
+const fastPickerEls = () => ({ select: $('fastModelSelect'), input: $('fastModel'), search: $('fastModelSearch'), refresh: $('fastModelsBtn') });
+const fastFallbackPickerEls = () => ({ select: $('fastFallbackModelSelect'), input: $('fastFallbackModel'), search: $('fastFallbackModelSearch'), refresh: $('fastFallbackModelsBtn') });
+
+function syncListedPicker(provider, els, list) {
+  const listed = provider !== 'typesafe';
+  els.refresh.hidden = !listed;
+  els.select.hidden = !listed;
+  if (listed) renderPicker(els.select, els.input, list, els.search);
+  else {
+    els.input.hidden = false;
+    els.search.hidden = true;
+  }
 }
 
 $('fastEnabled').addEventListener('change', syncFast);
@@ -375,8 +413,22 @@ $('fastProvider').addEventListener('change', () => {
   loadFastModels();
 });
 $('fastModelsBtn').addEventListener('click', () => loadFastModels(true));
-bindSearch($('fastModelSearch'), $('fastModelSelect'), () => fastModels, () => renderPicker($('fastModelSelect'), $('fastModel'), fastModels, $('fastModelSearch')));
+bindSearch($('fastModelSearch'), $('fastModelSelect'), () => fastModels, syncFastProvider);
 $('fastModelSelect').addEventListener('change', () => pickModel($('fastModelSelect'), $('fastModel')));
+
+$('fastFallbackEnabled').addEventListener('change', () => {
+  syncFastFallback();
+  loadFastFallbackModels();
+});
+$('fastFallbackProvider').addEventListener('change', () => {
+  $('fastFallbackModel').value = fastPresets[$('fastFallbackProvider').value].model;
+  fastFallbackModels = [];
+  syncFastFallback();
+  loadFastFallbackModels();
+});
+$('fastFallbackModelsBtn').addEventListener('click', () => loadFastFallbackModels(true));
+bindSearch($('fastFallbackModelSearch'), $('fastFallbackModelSelect'), () => fastFallbackModels, syncFastFallback);
+$('fastFallbackModelSelect').addEventListener('change', () => pickModel($('fastFallbackModelSelect'), $('fastFallbackModel')));
 
 async function loadFastModels(showErrors = false) {
   const config = readFastForm();
@@ -386,12 +438,27 @@ async function loadFastModels(showErrors = false) {
     const list = await request('list-fast-models', { config });
     if (load !== loads.fast) return;
     fastModels = list;
-    renderPicker($('fastModelSelect'), $('fastModel'), fastModels, $('fastModelSearch'));
+    syncFastProvider();
     showFastStatus('', list.length ? '' : t('fast.noDecisionModels'));
   } catch (err) {
     if (load === loads.fast && showErrors) showFastStatus('fail', `✗ ${err.message}`);
   }
 }
+
+async function loadFastFallbackModels(showErrors = false) {
+  const config = readFastFallback();
+  if (!$('fastEnabled').checked || !config.enabled || config.provider === 'typesafe') return;
+  const load = ++loads.fastFallback;
+  try {
+    const list = await request('list-fast-models', { config });
+    if (load !== loads.fastFallback) return;
+    fastFallbackModels = list;
+    syncFastFallback();
+  } catch (err) {
+    if (load === loads.fastFallback && showErrors) showFastStatus('fail', `✗ ${err.message}`);
+  }
+}
+
 /** state: 'ok' (green), 'fail' (red) or '' (neutral); the button and the message share it. */
 function showFastStatus(state, text) {
   $('fastTestBtn').dataset.state = state;
@@ -423,136 +490,6 @@ function activeModel() {
   return currentProviderSettings().model;
 }
 
-function syncSections() {
-  const isChatgpt = $('provider').value === 'chatgpt';
-  $('chatgptSection').hidden = !isChatgpt;
-  $('compatibleSection').hidden = isChatgpt;
-}
-
-$('provider').addEventListener('change', () => {
-  settings = readFormKeepingModel();
-  $('modelInput').value = activeModel();
-  fillFastForm(settings.fast);
-  syncSections();
-  models = [];
-  renderModels();
-  renderEfforts(currentProviderSettings().effort);
-  loadModels();
-});
-
-// Switching provider must not copy one provider's model id into the other.
-function readFormKeepingModel() {
-  const next = readForm();
-  const prevProvider = settings.provider;
-  const prevTarget = prevProvider === 'chatgpt' ? next.chatgpt : next.compatible;
-  const newTarget = next.provider === 'chatgpt' ? next.chatgpt : next.compatible;
-  if (prevProvider !== next.provider) {
-    prevTarget.model = $('modelInput').value.trim();
-    prevTarget.effort = $('effort').value;
-    newTarget.model = (next.provider === 'chatgpt' ? settings.chatgpt : settings.compatible).model;
-    newTarget.effort = (next.provider === 'chatgpt' ? settings.chatgpt : settings.compatible).effort;
-  }
-  return next;
-}
-
-$('preset').addEventListener('change', () => {
-  const preset = presets[$('preset').value];
-  $('baseUrl').value = preset.baseUrl;
-  $('modelInput').value = preset.model;
-  models = [];
-  renderModels();
-  renderEfforts('');
-  loadModels();
-});
-
-$('modelSelect').addEventListener('change', () => {
-  pickModel($('modelSelect'), $('modelInput'));
-  const model = models.find((m) => m.id === $('modelSelect').value);
-  renderEfforts(model?.defaultEffort ?? '');
-});
-$('modelInput').addEventListener('input', () => renderEfforts($('effort').value));
-$('refreshModelsBtn').addEventListener('click', () => loadModels(true));
-bindSearch($('modelSearch'), $('modelSelect'), () => models, renderModels);
-
-async function loadModels(showErrors = false) {
-  const draft = readForm();
-  if (draft.provider === 'chatgpt' && !(await request('auth-status')).connected) return;
-  const load = ++loads.main;
-  $('modelInfo').textContent = t('model.loading');
-  try {
-    const list = await request('list-models', { settings: draft });
-    if (load !== loads.main) return;
-    models = list;
-    if (!$('modelInput').value && models[0]) $('modelInput').value = models[0].id;
-    renderModels();
-    renderEfforts($('effort').value || (models.find((m) => m.id === $('modelInput').value)?.defaultEffort ?? ''));
-    $('modelInfo').textContent = '';
-  } catch (err) {
-    if (load === loads.main) $('modelInfo').textContent = showErrors ? err.message : t('model.fallback');
-  }
-}
-
-function renderModels() {
-  renderPicker($('modelSelect'), $('modelInput'), models, $('modelSearch'));
-}
-
-/**
- * One dropdown per model field. The id input is the saved value; it only shows
- * for "Other model" or while no list is available, so the model is never shown twice.
- */
-function renderPicker(select, input, list, search) {
-  const current = input.value.trim();
-  search.hidden = list.length <= SEARCH_FROM;
-  const shown = filterModels(list, search.value, current);
-  const option = (m) => `<option value="${escapeAttr(m.id)}">${escapeAttr(m.name ?? m.id)}</option>`;
-  const hidden = shown.filter((m) => m.hidden);
-  const count = shown.length === list.length ? list.length : `${shown.length} / ${list.length}`;
-  select.innerHTML = `<option value="" disabled>${escapeAttr(list.length ? t('model.pickCount', { n: count }) : t('model.pick'))}</option>`
-    + shown.filter((m) => !m.hidden).map(option).join('')
-    + (hidden.length ? `<optgroup label="${escapeAttr(t('model.hiddenGroup'))}">${hidden.map(option).join('')}</optgroup>` : '')
-    + `<option value="${CUSTOM_MODEL}">${escapeAttr(t('model.other'))}</option>`;
-  const known = list.some((m) => m.id === current);
-  select.value = known ? current : (current || !list.length ? CUSTOM_MODEL : '');
-  input.hidden = select.value !== CUSTOM_MODEL;
-}
-
-// The selected model stays listed while searching, so filtering never changes the choice.
-function filterModels(list, query, current) {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return list;
-  return list.filter((m) => m.id === current || words.every((w) => `${m.id} ${m.name ?? ''}`.toLowerCase().includes(w)));
-}
-
-/** Enter in a search box picks the first model that matches the query. */
-function bindSearch(search, select, getList, render) {
-  search.addEventListener('input', render);
-  search.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    const [first] = filterModels(getList(), search.value, null);
-    if (!first) return;
-    select.value = first.id;
-    select.dispatchEvent(new Event('change'));
-  });
-}
-
-function pickModel(select, input) {
-  const custom = select.value === CUSTOM_MODEL;
-  if (!custom) input.value = select.value;
-  input.hidden = !custom;
-  if (custom) input.focus();
-}
-
-function renderEfforts(selected) {
-  const provider = $('provider').value;
-  const model = models.find((m) => m.id === $('modelInput').value.trim());
-  const style = provider === 'chatgpt' ? 'chatgpt' : presets[$('preset').value]?.thinkingStyle ?? 'reasoning_effort';
-  const levels = model?.efforts?.length ? model.efforts : FALLBACK_EFFORTS[style];
-  const options = ['', ...levels];
-  $('effort').innerHTML = options.map((e) => `<option value="${e}">${TRANSLATED_EFFORTS[e] ? t(TRANSLATED_EFFORTS[e]) : e}${model?.defaultEffort === e ? t('effort.defaultMark') : ''}</option>`).join('');
-  $('effort').value = options.includes(selected) ? selected : '';
-}
-
 function showAuth(status) {
   authStatus = status;
   $('authStatus').textContent = status.connected
@@ -582,7 +519,7 @@ $('importBtn').addEventListener('click', async () => {
   try {
     showAuth(await request('auth-import', { text: $('authJson').value }));
     $('authJson').value = '';
-    loadModels(true);
+    mainForm.loadModels(true);
   } catch (err) {
     showSettingsError(err.message);
   }
@@ -590,22 +527,25 @@ $('importBtn').addEventListener('click', async () => {
 
 $('saveBtn').addEventListener('click', async () => {
   const next = readForm();
-  if (!currentProviderSettings(next).model) {
-    showSettingsError(t('err.pickModel'));
-    return;
-  }
-  if (next.fast.enabled && !next.fast.apiKey) {
-    showSettingsError(t('err.fastKey'));
-    return;
-  }
-  if (next.fast.enabled && !next.fast.baseUrl) {
-    showSettingsError(t('err.fastUrl'));
+  const problem = settingsProblem(next);
+  if (problem) {
+    showSettingsError(t(problem));
     return;
   }
   settings = await request('save-settings', { settings: next });
   updateChip();
   toggleSettings(false);
 });
+
+/** The i18n key of the first thing that blocks saving, or null. */
+function settingsProblem(next) {
+  if (!currentProviderSettings(next).model) return 'err.pickModel';
+  if (next.fallback.enabled && !currentProviderSettings(next.fallback).model) return 'err.fallbackModel';
+  if (next.fast.enabled && !next.fast.apiKey) return 'err.fastKey';
+  if (next.fast.enabled && !next.fast.baseUrl) return 'err.fastUrl';
+  if (next.fast.enabled && next.fast.fallback.enabled && !next.fast.fallback.apiKey) return 'err.fastFallbackKey';
+  return null;
+}
 
 function updateChip() {
   const p = currentProviderSettings();
@@ -617,10 +557,6 @@ function updateChip() {
 function showSettingsError(message) {
   $('settingsError').textContent = message;
   $('settingsError').hidden = false;
-}
-
-function escapeAttr(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
 
 init().catch((err) => showSettingsError(err.message));
