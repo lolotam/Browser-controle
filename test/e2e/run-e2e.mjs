@@ -208,6 +208,8 @@ async function main() {
     headless: true,
     colorScheme: process.env.E2E_COLOR_SCHEME === 'dark' ? 'dark' : 'light',
     executablePath: process.env.CHROMIUM_PATH || undefined,
+    // The default headless shell cannot load extensions; full Chromium in new headless mode can.
+    channel: process.env.CHROMIUM_PATH ? undefined : 'chromium',
     args: [`--disable-extensions-except=${EXTENSION_DIR}`, `--load-extension=${EXTENSION_DIR}`],
   });
   try {
