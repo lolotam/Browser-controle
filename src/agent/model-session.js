@@ -48,7 +48,7 @@ export function createModelSession(settings, { notify, seed = null }) {
 
 /** Settings that require a new model session when they change. */
 export function modelSessionKey(settings) {
-  return JSON.stringify([settings.provider, settings.chatgpt, settings.compatible, settings.fallback, settings.vision, settings.allowJavascript]);
+  return JSON.stringify([settings.provider, settings.chatgpt, settings.compatible, settings.fallback, settings.vision, settings.allowJavascript, settings.replyLanguage]);
 }
 
 export function createFastAsk(fast, notify) {

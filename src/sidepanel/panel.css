@@ -197,6 +197,12 @@ main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 #mainProvider > .field { margin-bottom: 12px; }
 .check { display: flex; gap: 8px; align-items: flex-start; }
 .check input { width: auto; margin-top: 4px; accent-color: var(--accent-text); }
+/* An on/off switch: the setting changes behaviour, not just a detail. */
+.switch { align-items: center; }
+.switch input { appearance: none; width: 32px; height: 18px; margin: 0; flex: none; border-radius: 9999px; background: var(--border-strong); position: relative; cursor: pointer; transition: background-color .15s; }
+.switch input::after { content: ''; position: absolute; top: 2px; inset-inline-start: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--bg); transition: inset-inline-start .15s; }
+.switch input:checked { background: var(--accent); }
+.switch input:checked::after { inset-inline-start: 16px; }
 .row { display: flex; gap: 8px; align-items: center; }
 .row.between { justify-content: space-between; }
 .row.end { justify-content: flex-end; }

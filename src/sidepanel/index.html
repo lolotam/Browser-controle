@@ -169,6 +169,19 @@
     </div>
 
     <div class="card">
+      <label class="check switch"><input type="checkbox" id="replyLangEnabled" role="switch" /> <strong data-i18n="replyLang.title"></strong></label>
+      <p class="muted" data-i18n="replyLang.desc"></p>
+      <label class="field" id="replyLangField">
+        <span data-i18n="replyLang.label"></span>
+        <select id="replyLang">
+          <option value="" disabled data-i18n="replyLang.pick"></option>
+          <option value="ar">العربية</option>
+          <option value="en">English</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="card">
       <label class="check"><input type="checkbox" id="fastEnabled" /> <strong data-i18n="fast.title"></strong></label>
       <p class="muted" data-i18n="fast.desc"></p>
       <div id="fastFields" class="fields">

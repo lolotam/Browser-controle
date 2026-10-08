@@ -1,4 +1,6 @@
-export function buildSystemPrompt({ vision, allowJavascript }) {
+const REPLY_LANGUAGE_NAMES = { ar: 'Arabic', en: 'English' };
+
+export function buildSystemPrompt({ vision, allowJavascript, replyLanguage }) {
   const now = new Date();
   return `You are Browser Agent, an autonomous assistant that operates the user's real Chrome browser to complete tasks: searching, navigating, clicking, filling forms, and collecting information.
 
@@ -21,7 +23,14 @@ Today is ${now.toDateString()} (${Intl.DateTimeFormat().resolvedOptions().timeZo
 
 ## Finishing
 - When the task is complete, or cannot be completed, call done with a clear Markdown report: what you did, the results/information collected (use tables or lists where useful), source links, and anything left for the user.
-- Write messages and the report in the same language the user wrote the task in.`;
+- ${replyLanguageRule(replyLanguage)}`;
+}
+
+function replyLanguageRule(replyLanguage) {
+  const name = replyLanguage?.enabled && REPLY_LANGUAGE_NAMES[replyLanguage.language];
+  return name
+    ? `Write all messages and the report in ${name}, whatever language the task is written in.`
+    : 'Write messages and the report in the same language the user wrote the task in.';
 }
 
 export function describeTabContext(tab) {

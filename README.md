@@ -26,7 +26,7 @@ A Chrome side-panel extension. Give it a task in Arabic or English and it carrie
 - **Optional fast layer:** a ⚡ layer can run confident steps without calling the main LLM. It uses TypeSafe's Jev decision model, directly or through Vercel AI Gateway, for both the fast layer and its backup. It is experimental.
 - **Backup providers:** if the main model's provider fails (plan or quota used up, key rejected, server error, no connection), a backup provider finishes the same task from where it stopped; the fast layer has its own backup decision provider. A red or amber notice under the header says what failed and who took over.
 - **Sessions:** several sessions, saved on your computer, with search, rename and delete. Sessions can run tasks at the same time; each works only in its own Chrome tab group and never brings a tab to the front.
-- **Interface:** Arabic or English, light or dark following the system. Settings can be backed up to a file and restored after reinstalling.
+- **Interface:** Arabic or English, light or dark following the system. The agent replies in the language of the task, or always in a language you switch on in settings. Settings can be backed up to a file and restored after reinstalling.
 
 ## Status
 
@@ -34,7 +34,7 @@ A Chrome side-panel extension. Give it a task in Arabic or English and it carrie
 |---|---|
 | Browser control + agent loop | ✅ Covered by unit tests and a Chromium end-to-end test (mock model) |
 | Codex / ChatGPT subscription | 🟡 Implemented from the Codex CLI source and tested with mocks; **needs validation on a real account** |
-| Other providers (Grok, GLM, OpenAI API, OpenRouter) | ⏳ Code exists but has not been tested with the real services; planned |
+| Other providers (Gemini, Grok, DeepSeek, NVIDIA NIM, GLM, OpenAI API, OpenRouter) | ⏳ Code exists; model lists checked live where they are public (NVIDIA, OpenRouter); chat not yet tested with real keys |
 | Fast layer (Jev or a gateway chat model) | ⏳ Experimental, tested with mocks only |
 
 > Using a ChatGPT plan outside OpenAI's own apps is unofficial. OpenAI may change or block it at any time.

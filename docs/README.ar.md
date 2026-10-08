@@ -9,7 +9,14 @@
 | **اشتراك ChatGPT** (Plus / Pro / Business) | تسجيل دخول بحساب ChatGPT (نفس طريقة Codex CLI) | الموديلات ومستويات التفكير بتتحمّل تلقائيًا من حسابك |
 | **xAI Grok** | API key من console.x.ai | اشتراك SuperGrok **مش** بيدّي API — لازم API key منفصل |
 | **Z.ai GLM** | API key (أو مفتاح GLM Coding Plan) | فيه preset لـ Coding Plan و preset للـ API العادي |
+| **Google Gemini** | API key من Google AI Studio | عن طريق واجهة Gemini المتوافقة مع OpenAI، ومستويات التفكير مدعومة |
+| **DeepSeek** | API key من platform.deepseek.com | التفكير بيتحدد باختيار الموديل (مفيش مستويات) |
+| **NVIDIA NIM** | API key من build.nvidia.com | قايمة الموديلات عامة وبتظهر قبل المفتاح، لكن المحادثة محتاجة مفتاح |
 | OpenAI API / OpenRouter / أي سيرفر متوافق | API key + Base URL | |
+
+نفس قايمة المزوّدين دي متاحة للمزوّد الاحتياطي. بعد ما تحط المفتاح، زرار ↻ بيحمّل كل موديلات المزوّد مع بحث.
+
+**لغة ردود الوكيل:** من الإعدادات. لما تكون مقفولة، الوكيل بيرد بنفس لغة المهمة. لما تفتحها لازم تختار لغة (العربية أو English)، والوكيل بيرد بيها دايماً.
 
 ## ⚡ الطبقة السريعة (اختياري)
 

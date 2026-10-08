@@ -479,6 +479,9 @@ function fillForm() {
   $('maxSteps').value = settings.maxSteps;
   $('vision').checked = settings.vision;
   $('allowJavascript').checked = settings.allowJavascript;
+  $('replyLangEnabled').checked = settings.replyLanguage.enabled;
+  $('replyLang').value = settings.replyLanguage.language;
+  syncReplyLanguage();
   fillFastForm(settings.fast);
 }
 
@@ -490,8 +493,16 @@ function readForm() {
   next.maxSteps = Number($('maxSteps').value) || 40;
   next.vision = $('vision').checked;
   next.allowJavascript = $('allowJavascript').checked;
+  next.replyLanguage = { enabled: $('replyLangEnabled').checked, language: $('replyLang').value };
   return next;
 }
+
+// Off: the agent follows the language of the task, so the choice is hidden.
+function syncReplyLanguage() {
+  $('replyLangField').hidden = !$('replyLangEnabled').checked;
+}
+
+$('replyLangEnabled').addEventListener('change', syncReplyLanguage);
 
 function syncFallback() {
   $('fallbackProvider').hidden = !$('fallbackEnabled').checked;
@@ -770,6 +781,7 @@ $('saveBtn').addEventListener('click', async () => {
 /** The i18n key of the first thing that blocks saving, or null. */
 function settingsProblem(next) {
   if (!currentProviderSettings(next).model) return 'err.pickModel';
+  if (next.replyLanguage.enabled && !next.replyLanguage.language) return 'err.pickReplyLanguage';
   if (next.fallback.enabled && !currentProviderSettings(next.fallback).model) return 'err.fallbackModel';
   if (next.fast.enabled && !next.fast.apiKey) return 'err.fastKey';
   if (next.fast.enabled && !next.fast.baseUrl) return 'err.fastUrl';

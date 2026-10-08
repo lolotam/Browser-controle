@@ -136,3 +136,19 @@ test('settings saved before backups existed get disabled backups, and partial ba
   assert.equal(partial.fast.fallback.apiKey, 'tk');
   assert.equal(partial.fast.fallback.model, 'jev-latest');
 });
+
+test('model lists drop embedding and rerank models and the "models/" prefix Gemini may return', async () => {
+  globalThis.fetch = async () => Response.json({ data: [
+    { id: 'models/gemini-3.8-flash' },
+    { id: 'models/gemini-embedding-001' },
+    { id: 'nvidia/nemotron-3-embed-1b' },
+    { id: 'nvidia/llama-3.2-nv-rerankqa-1b-v2' },
+    { id: 'nvidia/nemotron-3-super-120b-a12b' },
+  ] });
+  const models = await listCompatibleModels('https://generativelanguage.googleapis.com/v1beta/openai', 'k');
+  assert.deepEqual(models.map((m) => m.id), ['gemini-3.8-flash', 'nvidia/nemotron-3-super-120b-a12b']);
+});
+
+test('reply language defaults to following the task language', () => {
+  assert.deepEqual(mergeSettings({}).replyLanguage, { enabled: false, language: '' });
+});
