@@ -31,9 +31,14 @@ function supportsTools(model) {
   return Array.isArray(model.supported_parameters) ? model.supported_parameters.includes('tools') : null;
 }
 
+// OpenCode (Zen and Go) routes and caches by a stable conversation id, and Go
+// rejects requests without one (HTTP 400 MissingSessionID).
+const OPENCODE = /^https:\/\/opencode\.ai\//;
+
 export class CompatibleSession {
   constructor({ baseUrl, apiKey, model, effort, thinkingStyle, systemPrompt, tools }) {
     this.baseUrl = trimSlash(baseUrl);
+    this.sessionId = crypto.randomUUID();
     this.apiKey = apiKey;
     this.model = model;
     this.effort = effort;
@@ -66,6 +71,7 @@ export class CompatibleSession {
       headers: {
         'Content-Type': 'application/json',
         ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
+        ...(OPENCODE.test(this.baseUrl) ? { 'x-opencode-session': this.sessionId } : {}),
       },
       body: JSON.stringify(this.requestBody(toolChoice)),
     });
@@ -73,6 +79,8 @@ export class CompatibleSession {
       const detail = await res.text().catch(() => '');
       // OpenRouter's own advice for this one is to drop a tool, which the agent cannot do.
       if (/support tool use/i.test(detail)) throw new Error(`Model request failed (HTTP ${res.status}): this model cannot call tools, which the agent needs to use the browser. Pick another model.`);
+      // The provider has the model in its list but will not serve it to this account or plan.
+      if (/model is unavailable|model access is disabled/i.test(detail)) throw new Error(`Model request failed (HTTP ${res.status}): ${providerMessage(detail, 200)} This model is not available to your account or plan right now; pick another model in Settings.`);
       throw new Error(`Model request failed (HTTP ${res.status}): ${providerMessage(detail, 400)}`);
     }
 

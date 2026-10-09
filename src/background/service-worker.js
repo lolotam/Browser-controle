@@ -40,18 +40,23 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 // Requests from an extension carry an Origin header the Codex backend does not
 // expect from its CLI; strip it for the two OpenAI hosts this extension calls.
+// OpenCode asks clients to name themselves in the User-Agent instead of sending
+// a browser's or an HTTP library's; only this extension's own requests change.
 async function installHeaderRules() {
+  const own = { initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest', 'other'] };
   const rules = [1, 2].map((id, i) => ({
     id,
     priority: 1,
     action: { type: 'modifyHeaders', requestHeaders: [{ header: 'origin', operation: 'remove' }] },
-    condition: {
-      urlFilter: ['||chatgpt.com/backend-api/codex', '||auth.openai.com/'][i],
-      initiatorDomains: [chrome.runtime.id],
-      resourceTypes: ['xmlhttprequest', 'other'],
-    },
+    condition: { urlFilter: ['||chatgpt.com/backend-api/codex', '||auth.openai.com/'][i], ...own },
   }));
-  await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [1, 2], addRules: rules });
+  rules.push({
+    id: 3,
+    priority: 1,
+    action: { type: 'modifyHeaders', requestHeaders: [{ header: 'user-agent', operation: 'set', value: `postora-browser-agent/${chrome.runtime.getManifest().version}` }] },
+    condition: { urlFilter: '||opencode.ai/zen/', ...own },
+  });
+  await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [1, 2, 3], addRules: rules });
 }
 
 async function runnerFor(sessionId) {
