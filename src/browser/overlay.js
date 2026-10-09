@@ -117,7 +117,6 @@ export function overlayCommand(cmd) {
 
   if (!ui || !ui.host.isConnected) {
     const host = document.createElement('div');
-    host.setAttribute('aria-hidden', 'true');
     host.style.cssText = 'all:initial;position:fixed;inset:0;pointer-events:none;z-index:2147483647;';
     const root = host.attachShadow({ mode: 'closed' });
     root.innerHTML = `<style>
@@ -163,15 +162,15 @@ export function overlayCommand(cmd) {
       @media (prefers-reduced-motion: reduce) { .glow, .dot { animation: none; } .ripple { animation-duration: .01s; } }
     </style>
     <div class="wrap">
-      <div class="frame"><div class="glow"></div></div>
-      <div class="box"></div>
-      <div class="cursor">
+      <div class="frame" aria-hidden="true"><div class="glow"></div></div>
+      <div class="box" aria-hidden="true"></div>
+      <div class="cursor" aria-hidden="true">
         <svg width="24" height="30" viewBox="0 0 24 30" aria-hidden="true">
           <path d="M3 2 L3 24.5 L9 19 L13.2 28 L17.3 26.2 L13.2 17.4 L21.2 17 Z" fill="#0d1113" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>
         </svg>
         <div class="caption"></div>
       </div>
-      <div class="bar"><span class="dot"></span><span class="label"></span><button type="button" class="stop"></button></div>
+      <div class="bar"><span class="dot" aria-hidden="true"></span><span class="label"></span><button type="button" class="stop"></button></div>
     </div>`;
     document.documentElement.appendChild(host);
     const q = (selector) => root.querySelector(selector);

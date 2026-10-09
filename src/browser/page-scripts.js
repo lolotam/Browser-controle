@@ -132,14 +132,15 @@ export function elementAction(index, action, value, quiet) {
     flash();
     const label = (el.getAttribute('aria-label') || el.innerText || el.getAttribute('placeholder') ||
       el.getAttribute('title') || el.getAttribute('alt') || '').replace(/\s+/g, ' ').trim().slice(0, 40);
-    const autocomplete = el.getAttribute('autocomplete') || '';
+    // Tokens may carry section-/billing/shipping prefixes, e.g. "section-pay billing cc-number".
+    const autocomplete = (el.getAttribute('autocomplete') || '').toLowerCase().split(/\s+/);
     return {
       x: r.left + r.width / 2,
       y: r.top + r.height / 2,
       tag: el.tagName.toLowerCase(),
       label,
       rect: { left: r.left, top: r.top, width: r.width, height: r.height },
-      secret: el.type === 'password' || /^(cc-|one-time-code|current-password|new-password)/.test(autocomplete),
+      secret: el.type === 'password' || autocomplete.some((token) => /^(cc-|one-time-code$|current-password$|new-password$)/.test(token)),
     };
   }
   if (action === 'select-all') {
