@@ -214,7 +214,6 @@ main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .card { border: 1px solid var(--border); border-radius: var(--radius-card); padding: 12px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 10px; }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field > span { font-weight: 560; font-size: 11.5px; color: var(--text-2); }
-#mainProvider > .field { margin-bottom: 12px; }
 .check { display: flex; gap: 8px; align-items: flex-start; }
 .check input { width: auto; margin-top: 4px; accent-color: var(--accent-text); }
 /* An on/off switch: the setting changes behaviour, not just a detail. */
@@ -237,7 +236,19 @@ details[open] { display: flex; flex-direction: column; gap: 6px; }
 .fields { display: flex; flex-direction: column; gap: 10px; }
 .grow { flex: 1; min-width: 0; }
 .model-search { border-radius: 9999px; padding-inline: 12px; }
-.sub-card { border: 1px dashed var(--border-strong); border-radius: var(--radius-card); padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+/* Settings tabs: the AI model and its backup in one, the fast layer in the other. */
+.tabs { display: flex; gap: 2px; padding: 2px; margin-bottom: 14px; background: var(--surface-2); border-radius: var(--radius-control); }
+.tabs [role="tab"] { flex: 1; border: 1px solid transparent; background: transparent; color: var(--text-2); font-weight: 560; padding: 6px 8px; }
+.tabs [role="tab"]:hover { background: var(--surface); color: var(--text); }
+.tabs [role="tab"][aria-selected="true"] { background: var(--bg); color: var(--text); border-color: var(--border-strong); }
+/* One frame per provider, titled on its border, so the main and backup slots read as separate groups. */
+.frame { border: 1px solid var(--border-strong); border-radius: var(--radius-card); padding: 6px 12px 12px; margin: 0 0 14px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.frame > legend { display: flex; align-items: center; gap: 6px; padding: 0 6px; font-weight: 560; font-size: 12.5px; }
+.frame-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-2); flex: none; }
+.frame[data-kind="backup"] { border-style: dashed; }
+.frame[data-kind="backup"] .frame-dot { background: var(--warn); }
+.frame[data-kind="fast"] .frame-dot { background: var(--accent); }
+.inset { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 10px; display: flex; flex-direction: column; gap: 10px; }
 .test-btn { white-space: nowrap; flex: none; }
 .test-btn[data-state="ok"] { background: var(--success-bg); border-color: var(--success); color: var(--success); }
 .test-btn[data-state="fail"] { background: var(--danger-bg); border-color: var(--danger); color: var(--danger); }
