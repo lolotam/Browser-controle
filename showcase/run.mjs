@@ -91,9 +91,14 @@ async function runOne(model, task, dir) {
     const started = Date.now();
     await panel.fill('#input', task.task);
     await panel.click('#sendBtn');
-    const finished = await panel.waitForSelector('.msg.final', { timeout: args.timeout * 1000 }).then(() => true, () => false);
+    // A run ends with a final report, or with an error (a provider refusing the request ends the task too).
+    const ended = await panel.waitForFunction(() => {
+      if (document.querySelector('.msg.final')) return 'final';
+      return document.querySelector('.msg.error') ? 'error' : null;
+    }, null, { timeout: args.timeout * 1000, polling: 250 }).then((h) => h.jsonValue(), () => 'timeout');
+    const finished = ended === 'final';
     const ms = Date.now() - started;
-    if (!finished) await panel.click('#stopBtn').catch(() => {});
+    if (ended === 'timeout') await panel.click('#stopBtn').catch(() => {});
     await panel.waitForTimeout(1500); // the session saves 500 ms after its last event
     const session = await panel.evaluate(async () => {
       const { sessions = [] } = await chrome.storage.local.get('sessions');
@@ -115,7 +120,9 @@ async function runOne(model, task, dir) {
     fs.writeFileSync(path.join(dir, 'report.md'), report);
     fs.writeFileSync(path.join(dir, 'transcript.json'), JSON.stringify(events, null, 1));
     return {
-      status: finished ? (final?.success === false ? 'gave-up' : 'finished') : 'timeout',
+      // finished / gave-up: the agent wrote its report; error: the provider refused a request;
+      // stalled: no report and no error within the time limit (a model call that never answered).
+      status: finished ? (final?.success === false ? 'gave-up' : 'finished') : ended === 'error' ? 'error' : 'stalled',
       ms,
       grade: report ? task.check(report) : { pass: false, score: 0, notes: 'no report' },
       metrics: metricsOf(events),

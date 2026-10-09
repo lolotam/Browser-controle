@@ -1,0 +1,332 @@
+<title>Postora Model Showcase</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;650&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;600&family=Noto+Sans+Arabic:wght@400;600&display=swap">
+<style>
+/* Layout: a lab notebook for one benchmark run. Summary first (leaderboard),
+   then where the time went (per-task strip), then every run (matrix) and the
+   chosen run's two recordings side by side. Colors follow the Postora mark:
+   violet, orange and cyan on a violet-tinted neutral. */
+:root {
+  --bg: #f7f6fb;
+  --panel: #ffffff;
+  --ink: #1d1a2b;
+  --ink-2: #5c5873;
+  --line: #e2dfee;
+  --accent: #6d3fe6;
+  --accent-soft: #ece6ff;
+  --pass: #127a4a;
+  --pass-bg: #e3f5ec;
+  --fail: #b4232f;
+  --fail-bg: #fbe6e8;
+  --warn: #9a5a00;
+  --warn-bg: #fdf1dc;
+  --s1: #6d3fe6; --s2: #e46a17; --s3: #0f8fc4; --s4: #c2338a; --s5: #3c8a2e; --s6: #8a6d00;
+  --font-display: "Sora", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Source Sans 3", "Noto Sans Arabic", "Segoe UI", system-ui, sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12101c; --panel: #1b1829; --ink: #efedf7; --ink-2: #a9a4c2; --line: #2e2a42;
+    --accent: #a98bff; --accent-soft: #2a2245; --pass: #5fd39a; --pass-bg: #123224; --fail: #ff7d87; --fail-bg: #3a171c; --warn: #f0b04a; --warn-bg: #33270f;
+    --s1: #a98bff; --s2: #ff9a55; --s3: #4cc3f0; --s4: #f07ac0; --s5: #7fd36b; --s6: #e0c04a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12101c; --panel: #1b1829; --ink: #efedf7; --ink-2: #a9a4c2; --line: #2e2a42;
+  --accent: #a98bff; --accent-soft: #2a2245; --pass: #5fd39a; --pass-bg: #123224; --fail: #ff7d87; --fail-bg: #3a171c; --warn: #f0b04a; --warn-bg: #33270f;
+  --s1: #a98bff; --s2: #ff9a55; --s3: #4cc3f0; --s4: #f07ac0; --s5: #7fd36b; --s6: #e0c04a;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font-body); }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 64px; display: flex; flex-direction: column; gap: 40px; }
+h1, h2 { font-family: var(--font-display); font-weight: 650; letter-spacing: -0.015em; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(28px, 4vw, 40px); }
+h2 { font-size: 20px; }
+.eyebrow { font: 600 12px/1 var(--font-data); text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); }
+.lede { color: var(--ink-2); max-width: 70ch; margin: 0; }
+header { display: flex; flex-direction: column; gap: 10px; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.fact { font: 13px/1 var(--font-data); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; }
+section { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.sub { color: var(--ink-2); font-size: 14px; margin: 0; }
+.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { padding: 10px 12px; text-align: start; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font: 600 12px var(--font-data); text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-2); background: var(--panel); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-inline-end: 8px; vertical-align: 0; }
+.passbar { display: inline-flex; align-items: center; gap: 8px; }
+.passbar .track { width: 90px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.passbar .fill { display: block; height: 100%; background: var(--pass); }
+.rank { font: 600 13px var(--font-data); color: var(--ink-2); }
+.chart { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
+.chart svg { display: block; width: 100%; height: auto; }
+.chart text { font: 12px var(--font-body); fill: var(--ink-2); }
+.chart .axis { stroke: var(--line); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--ink-2); }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font: 12px/1.4 var(--font-data); padding: 6px 8px; border-radius: 6px; max-width: 260px; }
+.matrix td:first-child, .matrix th:first-child { position: sticky; inset-inline-start: 0; background: var(--panel); z-index: 1; }
+.cell { font: 13px var(--font-data); border: 1px solid transparent; border-radius: 6px; padding: 5px 8px; cursor: pointer; background: transparent; color: inherit; display: inline-flex; gap: 6px; align-items: center; }
+.cell.pass { background: var(--pass-bg); color: var(--pass); }
+.cell.fail { background: var(--fail-bg); color: var(--fail); }
+.cell.warn { background: var(--warn-bg); color: var(--warn); }
+.cell[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.cell:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.task-name { display: flex; flex-direction: column; gap: 2px; }
+.task-name small { color: var(--ink-2); font: 12px var(--font-data); }
+.detail { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 16px; }
+.detail-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; }
+.status { font: 600 13px var(--font-data); padding: 4px 10px; border-radius: 999px; }
+.status.pass { background: var(--pass-bg); color: var(--pass); }
+.status.fail { background: var(--fail-bg); color: var(--fail); }
+.task-text { margin: 0; color: var(--ink-2); max-width: 75ch; }
+.videos { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+@media (max-width: 720px) { .videos { grid-template-columns: 1fr; } }
+.videos figure { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.videos figcaption { font: 12px var(--font-data); color: var(--ink-2); }
+video { width: 100%; max-width: 100%; border-radius: 8px; border: 1px solid var(--line); background: #000; }
+.novideo { border: 1px dashed var(--line); border-radius: 8px; padding: 24px; color: var(--ink-2); font-size: 14px; text-align: center; }
+.metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.metric { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.metric b { display: block; font: 600 20px var(--font-display); font-variant-numeric: tabular-nums; }
+.metric span { font-size: 12px; color: var(--ink-2); }
+.report { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.55 var(--font-data); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; max-height: 320px; overflow: auto; margin: 0; }
+.notes { color: var(--ink-2); font-size: 14px; margin: 0; padding-inline-start: 18px; display: flex; flex-direction: column; gap: 6px; max-width: 80ch; }
+.btn { font: 600 13px var(--font-body); background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow" id="eyebrow">Browser agent benchmark</span>
+    <h1>Postora Model Showcase</h1>
+    <p class="lede">Ten fixed tasks on public websites, run once per model by the Postora Browser Agent extension in Chromium. Every run uses the same extension build and the same fast layer, so the main model is the only thing that changes.</p>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section aria-labelledby="board-h">
+    <h2 id="board-h">Leaderboard</h2>
+    <p class="sub">Ranked by tasks passed, then by median time of the runs that reached a report. A pass means every required fact was in the final report. A provider error is a request the model’s provider refused (rate limit, quota, overload); stalled means a model call never answered within 6 minutes.</p>
+    <div class="scroll"><table id="board"><thead><tr>
+      <th>#</th><th>Model</th><th>Passed</th><th>Median time</th><th>Model turns / run</th><th>Jev steps</th><th>Failed actions</th><th>Provider errors</th><th>Stalled</th>
+    </tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section aria-labelledby="chart-h">
+    <h2 id="chart-h">Time per task</h2>
+    <p class="sub">Each dot is one run that reached a report. Filled dots passed, hollow dots failed. Further left is faster. Provider errors and stalls are left out because their time says nothing about the model.</p>
+    <div class="legend" id="legend"></div>
+    <div class="chart" id="chart"><div class="tip" id="tip" hidden></div></div>
+  </section>
+
+  <section aria-labelledby="matrix-h">
+    <h2 id="matrix-h">Every run</h2>
+    <p class="sub">Pick a run to watch its recordings and read its report.</p>
+    <div class="scroll"><table class="matrix" id="matrix"></table></div>
+  </section>
+
+  <section aria-labelledby="detail-h">
+    <h2 id="detail-h">Run detail</h2>
+    <div class="detail" id="detail"></div>
+  </section>
+
+  <section aria-labelledby="how-h">
+    <h2 id="how-h">How it was run</h2>
+    <ul class="notes" id="notes"></ul>
+  </section>
+</div>
+
+<script>
+const DATA = /*__DATA__*/null;
+const $ = (id) => document.getElementById(id);
+const el = (tag, props = {}, kids = []) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === 'text') n.textContent = v;
+    else if (k === 'cls') n.className = v;
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v);
+  }
+  for (const kid of [].concat(kids)) if (kid) n.append(kid);
+  return n;
+};
+const SERIES = ['--s1', '--s2', '--s3', '--s4', '--s5', '--s6'];
+const colorOf = (modelId) => `var(${SERIES[DATA.models.findIndex((m) => m.id === modelId) % SERIES.length]})`;
+const secs = (ms) => (ms == null ? '—' : ms < 60000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.floor(ms / 60000)} min ${Math.round((ms % 60000) / 1000)} s`);
+const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : null; };
+const runOf = (model, task) => DATA.runs.find((r) => r.model === model && r.task === task);
+const passed = (r) => Boolean(r?.grade?.pass);
+
+// Header facts
+const startedAt = new Date(DATA.started);
+$('eyebrow').textContent = `Browser agent benchmark · ${startedAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+for (const f of [`${DATA.runs.length} runs`, `${DATA.tasks.length} tasks`, `${DATA.models.length} free models`, `Fast layer: ${DATA.jev}`, 'Live cursor on, screenshots allowed, 30-step cap']) $('facts').append(el('span', { cls: 'fact', text: f }));
+
+// Leaderboard
+const board = DATA.models.map((m) => {
+  const rs = DATA.runs.filter((r) => r.model === m.id);
+  const sum = (f) => rs.reduce((n, r) => n + (f(r) || 0), 0);
+  const actions = sum((r) => r.metrics?.actions);
+  return {
+    m, n: rs.length, pass: rs.filter(passed).length,
+    med: median(rs.filter((r) => r.status === 'finished' || r.status === 'gave-up').map((r) => r.ms).filter((x) => x != null)),
+    turns: rs.length ? sum((r) => r.metrics?.llmTurns) / rs.length : null,
+    jev: actions ? sum((r) => r.metrics?.jevActions) / actions : 0,
+    failedActions: sum((r) => r.metrics?.failedActions),
+    errors: rs.filter((r) => r.status === 'error').length,
+    stalled: rs.filter((r) => r.status === 'stalled').length,
+  };
+}).sort((a, b) => b.pass - a.pass || (a.med ?? 1e12) - (b.med ?? 1e12));
+board.forEach((b, i) => {
+  const bar = el('span', { cls: 'passbar' }, [el('span', { cls: 'track' }, el('span', { cls: 'fill', style: `width:${b.n ? (b.pass / b.n) * 100 : 0}%` })), el('span', { cls: 'num', text: `${b.pass}/${b.n}` })]);
+  $('board').tBodies[0].append(el('tr', {}, [
+    el('td', { cls: 'rank', text: String(i + 1) }),
+    el('td', {}, [el('span', { cls: 'swatch', style: `background:${colorOf(b.m.id)}` }), b.m.label]),
+    el('td', {}, bar),
+    el('td', { cls: 'num', text: secs(b.med) }),
+    el('td', { cls: 'num', text: b.turns == null ? '—' : b.turns.toFixed(1) }),
+    el('td', { cls: 'num', text: `${Math.round(b.jev * 100)}%` }),
+    el('td', { cls: 'num', text: String(b.failedActions) }),
+    el('td', { cls: 'num', text: String(b.errors) }),
+    el('td', { cls: 'num', text: String(b.stalled) }),
+  ]));
+});
+
+// Legend
+for (const m of DATA.models) $('legend').append(el('span', {}, [el('span', { cls: 'swatch', style: `background:${colorOf(m.id)}` }), m.label]));
+
+// Time-per-task strip chart, drawn to the container's width
+const NS = 'http://www.w3.org/2000/svg';
+const svgEl = (tag, attrs) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); return n; };
+function drawChart() {
+  const box = $('chart');
+  box.querySelector('svg')?.remove();
+  const W = Math.max(320, box.clientWidth - 24);
+  const labelW = W < 560 ? 110 : 190;
+  const rowH = 30, top = 8, bottom = 30;
+  const H = top + DATA.tasks.length * rowH + bottom;
+  const maxMs = Math.max(60000, ...DATA.runs.map((r) => r.ms || 0));
+  const step = maxMs > 240000 ? 60000 : maxMs > 120000 ? 30000 : 15000;
+  const xMax = Math.ceil(maxMs / step) * step;
+  const x = (ms) => labelW + ((W - labelW - 12) * ms) / xMax;
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', role: 'img', 'aria-label': 'Run time per task for each model' });
+  for (let t = 0; t <= xMax; t += step) {
+    svg.append(svgEl('line', { class: 'axis', x1: x(t), x2: x(t), y1: top, y2: H - bottom, 'stroke-width': 1 }));
+    const label = svgEl('text', { x: x(t), y: H - 10, 'text-anchor': 'middle' });
+    label.textContent = t === 0 ? '0' : `${t / 1000}s`;
+    svg.append(label);
+  }
+  DATA.tasks.forEach((task, i) => {
+    const y = top + i * rowH + rowH / 2;
+    const name = svgEl('text', { x: 0, y: y + 4 });
+    name.textContent = W < 560 ? task.id : task.title;
+    svg.append(name);
+    DATA.models.forEach((m, j) => {
+      const r = runOf(m.id, task.id);
+      if (!r || r.ms == null || r.status === 'error' || r.status === 'stalled') return;
+      const dot = svgEl('circle', {
+        cx: x(r.ms), cy: y + (j - (DATA.models.length - 1) / 2) * 3, r: 5.5,
+        fill: passed(r) ? colorOf(m.id) : 'var(--panel)', stroke: colorOf(m.id), 'stroke-width': 2, tabindex: 0, style: 'cursor:pointer',
+      });
+      const tipText = `${m.label}\n${task.title}: ${secs(r.ms)} · ${passed(r) ? 'passed' : 'failed'}`;
+      dot.addEventListener('mouseenter', () => showTip(dot, tipText));
+      dot.addEventListener('focus', () => showTip(dot, tipText));
+      dot.addEventListener('mouseleave', hideTip);
+      dot.addEventListener('blur', hideTip);
+      dot.addEventListener('click', () => select(m.id, task.id, true));
+      svg.append(dot);
+    });
+  });
+  box.append(svg);
+}
+function showTip(dot, text) {
+  const tip = $('tip');
+  tip.textContent = text;
+  tip.style.whiteSpace = 'pre-line';
+  tip.hidden = false;
+  const b = $('chart').getBoundingClientRect();
+  const d = dot.getBoundingClientRect();
+  const left = Math.min(Math.max(8, d.left - b.left + 10), b.width - tip.offsetWidth - 8);
+  tip.style.left = `${left}px`;
+  tip.style.top = `${Math.max(8, d.top - b.top - tip.offsetHeight - 6)}px`;
+}
+function hideTip() { $('tip').hidden = true; }
+drawChart();
+let resizeTimer;
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(drawChart, 120); });
+
+// Matrix
+const head = el('tr', {}, [el('th', { text: 'Task' }), ...DATA.models.map((m) => el('th', {}, [el('span', { cls: 'swatch', style: `background:${colorOf(m.id)}` }), m.label.split(' · ')[1] || m.label]))]);
+$('matrix').append(el('thead', {}, head));
+const body = el('tbody');
+for (const task of DATA.tasks) {
+  const row = el('tr', {}, el('td', {}, el('span', { cls: 'task-name' }, [el('span', { text: task.title, dir: 'auto' }), el('small', { text: task.site })])));
+  for (const m of DATA.models) {
+    const r = runOf(m.id, task.id);
+    row.append(el('td', {}, r ? el('button', {
+      cls: `cell ${passed(r) ? 'pass' : r.status === 'error' || r.status === 'stalled' ? 'warn' : 'fail'}`, type: 'button', 'aria-pressed': 'false', 'data-key': `${m.id}|${task.id}`,
+      'aria-label': `${m.label}, ${task.title}: ${passed(r) ? 'passed' : 'failed'} in ${secs(r.ms)}`,
+      onclick: () => select(m.id, task.id, true),
+    }, [el('span', { text: passed(r) ? '✓' : '✗', 'aria-hidden': 'true' }), el('span', { text: r.status === 'error' ? 'provider error' : r.status === 'stalled' ? 'stalled' : secs(r.ms) })]) : el('span', { cls: 'sub', text: 'not run' })));
+  }
+  body.append(row);
+}
+$('matrix').append(body);
+
+// Run detail with the two recordings kept in step
+function select(modelId, taskId, scroll) {
+  const r = runOf(modelId, taskId);
+  const m = DATA.models.find((x) => x.id === modelId);
+  const task = DATA.tasks.find((t) => t.id === taskId);
+  if (!r) return;
+  document.querySelectorAll('.cell').forEach((c) => c.setAttribute('aria-pressed', String(c.dataset.key === `${modelId}|${taskId}`)));
+  const d = $('detail');
+  d.replaceChildren();
+  d.append(el('div', { cls: 'detail-head' }, [
+    el('div', {}, [el('div', { cls: 'eyebrow', text: task.site }), el('h2', { text: `${task.title} · ${m.label}`, dir: 'auto' })]),
+    el('span', { cls: `status ${passed(r) ? 'pass' : 'fail'}`, text: `${passed(r) ? 'Passed' : r.status === 'error' ? 'Provider error' : r.status === 'stalled' ? 'Stalled' : 'Failed'} · ${secs(r.ms)}` }),
+  ]));
+  d.append(el('p', { cls: 'task-text', text: `Task: ${task.task}`, dir: 'auto' }));
+  const page = r.videos?.page ? el('video', { src: r.videos.page, controls: '', preload: 'metadata', playsinline: '' }) : el('div', { cls: 'novideo', text: 'Page recording not uploaded yet.' });
+  const panel = r.videos?.panel ? el('video', { src: r.videos.panel, preload: 'metadata', playsinline: '', muted: '' }) : el('div', { cls: 'novideo', text: 'Panel recording not uploaded yet.' });
+  d.append(el('div', { cls: 'videos' }, [
+    el('figure', {}, [page, el('figcaption', { text: 'The page, with the agent’s live cursor. Its controls also drive the panel recording.' })]),
+    el('figure', {}, [panel, el('figcaption', { text: 'The side panel: steps and report.' })]),
+  ]));
+  if (page.tagName === 'VIDEO' && panel.tagName === 'VIDEO') {
+    const offset = (r.video?.panelOffsetMs ?? 0) / 1000;
+    const follow = () => { const t = Math.max(0, page.currentTime - offset); if (Math.abs(panel.currentTime - t) > 0.4) panel.currentTime = t; };
+    page.addEventListener('play', () => { follow(); panel.play().catch(() => {}); });
+    page.addEventListener('pause', () => panel.pause());
+    page.addEventListener('seeked', follow);
+    page.addEventListener('timeupdate', follow);
+    page.addEventListener('ratechange', () => { panel.playbackRate = page.playbackRate; });
+  }
+  const mt = r.metrics || {};
+  const tokens = mt.promptTokens ? `${Math.round((mt.promptTokens + (mt.completionTokens || 0)) / 1000)}k` : '—';
+  d.append(el('div', { cls: 'metrics' }, [
+    ['Model turns', mt.llmTurns], ['Actions', mt.actions], ['Done by Jev', mt.jevActions], ['Jev hand-offs', mt.jevHandoffs],
+    ['Failed actions', mt.failedActions], ['Screenshots', mt.screenshots], ['Tokens', tokens], ['Grade', r.grade ? `${Math.round(r.grade.score * 100)}%` : '—'],
+  ].map(([label, value]) => el('div', { cls: 'metric' }, [el('b', { text: value == null ? '—' : String(value) }), el('span', { text: label })]))));
+  d.append(el('p', { cls: 'sub', text: `Check: ${r.grade?.notes ?? '—'}${r.errors?.length ? ` · Errors: ${r.errors.join(' | ')}` : ''}` }));
+  d.append(el('pre', { cls: 'report', dir: 'auto', text: r.report || '(no final report)' }));
+  if (scroll) d.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+const best = board[0];
+const firstRun = best && DATA.tasks.map((t) => runOf(best.m.id, t.id)).find((r) => r && passed(r) && r.videos?.page) || DATA.runs[0];
+if (firstRun) select(firstRun.model, firstRun.task, false);
+
+// Method notes
+for (const n of [
+  'Each run starts a fresh Chromium profile with the unpacked extension, opens the task’s start page, sends the task from the side panel and waits up to 6 minutes for the final report.',
+  `The fast layer is Jev (${DATA.jev}) in auto mode for every model; it runs obvious steps itself and hands the rest to the main model.`,
+  'A run passes when its final report contains every fact the task’s check requires. Live values (news, exchange rates, releases) are checked by shape rather than by value.',
+  'Times include page loads, the fast layer and the live cursor’s movement, so they are what a user would wait.',
+  'Left out after a connection check: OpenCode Zen’s free models (only usable inside the OpenCode app), Gemma 4 on OpenRouter (rate-limited), Inkling small (agent harnesses only) and Gemini 3.8 Flash (overloaded).',
+]) $('notes').append(el('li', { text: n }));
+</script>

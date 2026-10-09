@@ -69,7 +69,7 @@ export const TASKS = [
       ['original height ≈146 m', /14[56](?:[.,]\d+)?/],
       ['current height ≈138 m', /13[7-9](?:[.,]\d+)?/],
       ['built ≈2560 BC', /25[5-9]\d|26\d\d/],
-      ['answer in Arabic', /[؀-ۿ]{20,}/],
+      ['answer in Arabic', /(?:[؀-ۿ][^؀-ۿ]{0,3}){40,}/],
     ]),
   },
   {
@@ -109,13 +109,15 @@ export const TASKS = [
   },
   {
     id: 'exchange-rate',
-    title: 'USD to EGP',
+    title: 'USD to EUR',
     site: 'x-rates.com',
+    // x-rates.com does not list the Egyptian Pound; the first run of 2026-10-09 asked for
+    // it and every model rightly reported that, so the task now uses the Euro.
     startUrl: 'https://www.x-rates.com/',
-    task: 'What is the current exchange rate from 1 US Dollar to Egyptian Pound on this site? Also give 250 USD in EGP.',
+    task: 'What is the current exchange rate from 1 US Dollar to Euro on this site? Also give 250 USD in EUR.',
     check: (r) => grade(r, [
-      ['a USD→EGP rate', /(?:^|\D)(?:[2-9]\d|1\d\d)(?:[.,]\d+)?\s*(?:EGP|Egyptian|جنيه)/im],
-      ['the 250 USD amount', /\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d{4,6}(?:\.\d+)?/],
+      ['a USD→EUR rate (0.6–1.3)', /(?:^|[^\d.])(?:0\.[6-9]\d*|1\.[0-2]\d*)\s*(?:EUR|€|Euro)/im],
+      ['the 250 USD amount (150–325 EUR)', /(?:^|[^\d.])(?:1[5-9]\d|2\d\d|3[0-2]\d)(?:[.,]\d+)?\s*(?:EUR|€|Euro)|€\s*(?:1[5-9]\d|2\d\d|3[0-2]\d)/im],
     ]),
   },
   {
