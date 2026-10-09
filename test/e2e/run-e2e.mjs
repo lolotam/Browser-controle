@@ -165,7 +165,7 @@ function startServer(handlers) {
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, counts, base: `http://127.0.0.1:${server.address().port}` })));
 }
 
-async function runScenario(context, extensionId, { name, task, handlers, fast, expectReport, check, stopWorker = false }) {
+async function runScenario(context, extensionId, { name, task, handlers, fast, expectReport, check, stopWorker = false, sendEarly = false }) {
   const { server, counts, base } = await startServer(handlers);
   const panel = await context.newPage();
   const pageErrors = [];
@@ -208,8 +208,17 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
       await panel.waitForTimeout(500);
     }
 
-    await panel.fill('#input', task);
-    await panel.click('#sendBtn');
+    if (sendEarly) {
+      // A task sent as the panel opens, before it has picked its session, must still arrive.
+      await panel.addInitScript((text) => addEventListener('load', () => {
+        document.getElementById('input').value = text;
+        document.getElementById('composer').requestSubmit();
+      }), task);
+      await panel.reload();
+    } else {
+      await panel.fill('#input', task);
+      await panel.click('#sendBtn');
+    }
     const final = await panel.waitForSelector('.msg.final', { timeout: 60000 });
     const report = await final.innerText();
     if (process.env.E2E_SCREENSHOTS) {
@@ -356,6 +365,14 @@ async function main() {
         task: 'Fill the form and report the result',
         handlers: { llm: scriptedLlm() },
         stopWorker: true,
+        expectReport: 'Result: hello world / Blue',
+        check: () => [],
+      })),
+      ...(await runScenario(context, extensionId, {
+        name: 'early-send',
+        task: 'Fill the form and report the result',
+        handlers: { llm: scriptedLlm() },
+        sendEarly: true,
         expectReport: 'Result: hello world / Blue',
         check: () => [],
       })),

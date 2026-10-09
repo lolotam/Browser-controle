@@ -40,8 +40,14 @@ export class SessionRunner {
 
   /** `early` holds what the panel sent before this session finished loading. */
   attach(port, early = []) {
+    try {
+      port.postMessage({ type: 'replay', events: this.transcript, running: this.running, question: this.pendingQuestion?.question ?? null });
+    } catch {
+      // The panel closed or moved on while this session loaded. Keeping its closed
+      // port would make every later emit throw before reaching the next panel.
+      return;
+    }
     this.ports.add(port);
-    port.postMessage({ type: 'replay', events: this.transcript, running: this.running, question: this.pendingQuestion?.question ?? null });
     port.onDisconnect.addListener(() => this.ports.delete(port));
     port.onMessage.addListener((msg) => this.receive(msg));
     for (const msg of early) this.receive(msg);

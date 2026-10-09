@@ -41,3 +41,23 @@ test('what the panel sent while the session was loading is handled once it attac
   assert.deepEqual(received.map((e) => e.type), ['replay', 'notice-dismissed']);
   runner.dispose();
 });
+
+test('a panel that left while the session loaded does not swallow the next panel\'s events', async () => {
+  const meta = await sessions.createStoredSession('Revisited');
+  const runner = new SessionRunner({ meta, body: await sessions.loadSession(meta.id), color: 'cyan', isTakenByOther: () => null, onSessionsChanged: () => {} });
+  const closed = {
+    postMessage: () => { throw new Error('Attempting to use a disconnected port object'); },
+    onDisconnect: { addListener() {} },
+    onMessage: { addListener() {} },
+  };
+  const received = [];
+  const open = { postMessage: (event) => received.push(event), onDisconnect: { addListener() {} }, onMessage: { addListener() {} } };
+
+  runner.attach(closed, [{ type: 'dismiss-notice', id: 'n1' }]);
+  runner.attach(open);
+  runner.emit({ type: 'user', text: 'first task' });
+
+  assert.deepEqual(received.map((e) => e.type), ['replay', 'user']);
+  assert.equal(runner.ports.size, 1);
+  runner.dispose();
+});
