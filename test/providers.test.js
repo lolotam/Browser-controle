@@ -110,6 +110,8 @@ test('OpenCode requests carry one stable session id per conversation; other prov
   assert.equal(seen[1].session, seen[0].session);
   assert.equal(seen[2].session, undefined);
   assert.notEqual(new CompatibleSession({ ...base, baseUrl: 'https://opencode.ai/zen/v1' }).sessionId, seen[0].session);
+  // A conversation reopened after a worker restart keeps its id.
+  assert.equal(new CompatibleSession({ ...base, baseUrl: 'https://opencode.ai/zen/go/v1', sessionId: 'saved-session-1' }).sessionId, 'saved-session-1');
 });
 
 test('fast settings saved before providers existed keep using TypeSafe Jev', () => {

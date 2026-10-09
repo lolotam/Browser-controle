@@ -36,9 +36,9 @@ function supportsTools(model) {
 const OPENCODE = /^https:\/\/opencode\.ai\//;
 
 export class CompatibleSession {
-  constructor({ baseUrl, apiKey, model, effort, thinkingStyle, systemPrompt, tools }) {
+  constructor({ baseUrl, apiKey, model, effort, thinkingStyle, systemPrompt, tools, sessionId = crypto.randomUUID() }) {
     this.baseUrl = trimSlash(baseUrl);
-    this.sessionId = crypto.randomUUID();
+    this.sessionId = sessionId;
     this.apiKey = apiKey;
     this.model = model;
     this.effort = effort;

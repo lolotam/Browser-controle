@@ -127,7 +127,7 @@ export class SessionRunner {
     const reason = !this.session ? 'continuing an earlier session'
       : this.session.switched ? 'the previous task was finished by the backup provider'
         : 'the model was changed in settings';
-    this.session = createModelSession(settings, { notify: this.notify, seed: log ? { log, reason } : null });
+    this.session = createModelSession(settings, { notify: this.notify, seed: log ? { log, reason } : null, conversationId: this.id });
     this.sessionKey = key;
   }
 
