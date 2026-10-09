@@ -691,6 +691,37 @@ keyStore.register($('fastApiKey'), () => $('fastProvider').value);
 keyStore.register($('fastFallbackApiKey'), () => $('fastFallbackProvider').value);
 
 $('settingsBtn').addEventListener('click', () => toggleSettings(true));
+
+// Settings tabs (WAI-ARIA tabs pattern): click or arrow keys switch, the last choice is remembered.
+const SETTINGS_TABS = [$('tabModels'), $('tabFast')];
+
+function selectSettingsTab(tab, focus = false) {
+  for (const t of SETTINGS_TABS) {
+    const selected = t === tab;
+    t.setAttribute('aria-selected', String(selected));
+    t.tabIndex = selected ? 0 : -1;
+    $(t.getAttribute('aria-controls')).hidden = !selected;
+  }
+  if (focus) tab.focus();
+  $('settingsView').scrollTop = 0;
+  try { localStorage.setItem('settingsTab', tab.id); } catch { /* storage blocked */ }
+}
+
+SETTINGS_TABS.forEach((tab, i) => {
+  tab.addEventListener('click', () => selectSettingsTab(tab));
+  tab.addEventListener('keydown', (e) => {
+    const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const dir = document.documentElement.dir === 'rtl' ? -step : step;
+    selectSettingsTab(SETTINGS_TABS[(i + dir + SETTINGS_TABS.length) % SETTINGS_TABS.length], true);
+  });
+});
+
+try {
+  const saved = $(localStorage.getItem('settingsTab') ?? '');
+  if (SETTINGS_TABS.includes(saved)) selectSettingsTab(saved);
+} catch { /* storage blocked */ }
 $('closeSettingsBtn').addEventListener('click', () => toggleSettings(false));
 
 function toggleSettings(open) {
@@ -848,6 +879,7 @@ function isDecisionModel(provider, model) {
 
 function syncFast() {
   $('fastFields').hidden = !$('fastEnabled').checked;
+  $('fastFallbackFrame').hidden = !$('fastEnabled').checked; // a backup for a layer that is off means nothing
 }
 
 // TypeSafe has no model list; the other decision providers list theirs.
@@ -1030,6 +1062,7 @@ $('saveBtn').addEventListener('click', async () => {
   const next = readForm();
   const problem = settingsProblem(next);
   if (problem) {
+    selectSettingsTab(problem.startsWith('err.fast') ? $('tabFast') : $('tabModels')); // show the field at fault
     showSettingsError(t(problem));
     return;
   }
@@ -1059,6 +1092,7 @@ function updateChip() {
 function showSettingsError(message) {
   $('settingsError').textContent = message;
   $('settingsError').hidden = false;
+  $('settingsError').scrollIntoView({ block: 'nearest' });
 }
 
 startSessions().catch((err) => showSettingsError(err.message));
