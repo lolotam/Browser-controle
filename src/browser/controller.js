@@ -2,6 +2,7 @@
 // so clicks and keystrokes are trusted input events, indistinguishable from a
 // real user's, and work on sites that ignore synthetic DOM events.
 
+import { AgentOverlay } from './overlay.js';
 import { snapshotPage, elementAction, pageText, pageReadyState, devicePixelRatioOf } from './page-scripts.js';
 
 const CDP_VERSION = '1.3';
@@ -39,6 +40,7 @@ export class BrowserController {
     this.groupId = null;
     this.tabId = null;
     this.attached = new Set();
+    this.overlay = new AgentOverlay(this);
     chrome.debugger.onDetach.addListener(({ tabId }) => this.attached.delete(tabId));
     chrome.tabs.onRemoved.addListener((tabId) => {
       this.attached.delete(tabId);
@@ -66,7 +68,10 @@ export class BrowserController {
 
   async useTab(tabId) {
     const tab = await this.claimTab(tabId);
+    const previous = this.tabId;
     this.tabId = tabId;
+    if (previous !== null && previous !== tabId) await this.overlay.leave(previous);
+    await this.overlay.frame();
     return tab;
   }
 
@@ -139,8 +144,13 @@ export class BrowserController {
     return this.inject(snapshotPage, [maxElements, maxTextChars]);
   }
 
+  /** Scrolls an indexed element into view and returns its centre, label and box. */
+  async locate(index) {
+    return this.element(index, 'locate');
+  }
+
   async element(index, action, value = null) {
-    const result = await this.inject(elementAction, [index, action, value]);
+    const result = await this.inject(elementAction, [index, action, value, this.overlay.enabled]);
     if (result?.error) throw new Error(result.error);
     return result;
   }
@@ -165,6 +175,7 @@ export class BrowserController {
 
   async clickAt(x, y, { button = 'left', clickCount = 1 } = {}) {
     await this.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+    await this.overlay.click(x, y);
     for (let i = 1; i <= clickCount; i += 1) {
       await this.cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button, clickCount: i });
       await this.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button, clickCount: i });
@@ -219,11 +230,11 @@ export class BrowserController {
     const metrics = await this.cdp('Page.getLayoutMetrics');
     const vp = metrics.cssVisualViewport ?? metrics.layoutViewport;
     const dpr = (await this.inject(devicePixelRatioOf)) || 1;
-    const { data } = await this.cdp('Page.captureScreenshot', {
+    const { data } = await this.overlay.hiddenDuring(() => this.cdp('Page.captureScreenshot', {
       format: 'jpeg',
       quality: 60,
       clip: { x: vp.pageX, y: vp.pageY, width: vp.clientWidth, height: vp.clientHeight, scale: 1 / dpr },
-    });
+    }));
     return { dataUrl: `data:image/jpeg;base64,${data}`, width: Math.round(vp.clientWidth), height: Math.round(vp.clientHeight) };
   }
 
@@ -256,6 +267,7 @@ export class BrowserController {
       await delay(250);
     }
     await delay(300);
+    await this.overlay.frame(); // a navigation wipes the overlay; bring it back
   }
 }
 

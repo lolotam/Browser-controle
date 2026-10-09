@@ -107,16 +107,18 @@ chrome.runtime.onConnect.addListener((port) => {
   );
 });
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  handleRequest(msg).then(
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  handleRequest(msg, sender).then(
     (result) => sendResponse({ ok: true, result }),
     (err) => sendResponse({ ok: false, error: err.message }),
   );
   return true;
 });
 
-async function handleRequest(msg) {
+async function handleRequest(msg, sender) {
   switch (msg.type) {
+    case 'overlay-stop':
+      return stopFromPage(sender);
     case 'get-settings':
       return { settings: await loadSettings(), presets: COMPATIBLE_PRESETS, fastPresets: FAST_PRESETS };
     case 'save-settings':
@@ -219,6 +221,16 @@ async function blankSession(excluded = new Set()) {
   reserved.add(id);
   setTimeout(() => reserved.delete(id), RESERVATION_MS);
   return id;
+}
+
+/** The Stop button the overlay draws on a page stops the session working in that tab. */
+function stopFromPage(sender) {
+  const tabId = sender.tab?.id;
+  if (sender.id !== chrome.runtime.id || tabId === undefined) return null;
+  for (const runner of runners.values()) {
+    if (runner.running && runner.browser.tabId === tabId) runner.stop();
+  }
+  return null;
 }
 
 async function deleteSession(id) {

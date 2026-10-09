@@ -80,9 +80,10 @@ export class SessionRunner {
       this.onSessionsChanged(); // after naming, so other panels list it with its title
       const settings = await loadSettings();
       this.prepareModelSession(settings);
+      this.browser.overlay.begin({ enabled: settings.showCursor, uiLanguage: settings.uiLanguage });
       this.browser.tabId = null; // each task starts on the tab the user is looking at
       const tab = await this.browser.currentTab();
-      const execute = createToolExecutor(this.browser, { askUser: (q) => this.askUser(q, abort.signal) });
+      const execute = createToolExecutor(this.browser, { askUser: (q) => this.askUser(q, abort.signal), signal: abort.signal });
       const fastLayer = settings.fast.enabled && settings.fast.apiKey
         ? createFastLayer({ config: settings.fast, browser: this.browser, execute, task: text, ask: createFastAsk(settings.fast, this.notify) })
         : null;
@@ -101,6 +102,7 @@ export class SessionRunner {
       clearInterval(keepAlive);
       this.abort = null;
       this.pendingQuestion = null;
+      await this.browser.overlay.end();
       await this.browser.detachAll();
       this.emit({ type: 'status', running: false });
       this.onSessionsChanged();
@@ -136,7 +138,9 @@ export class SessionRunner {
   }
 
   stop() {
-    this.abort?.abort();
+    if (!this.abort) return;
+    this.abort.abort();
+    this.browser.overlay.end(); // feedback now, not after the current step returns
   }
 
   /** For a deleted session: stop its task and never save again, or its last events would recreate it. */

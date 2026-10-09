@@ -52,7 +52,8 @@ export function formatSnapshot(snap) {
   ].join('\n');
 }
 
-export function createToolExecutor(browser, { askUser }) {
+export function createToolExecutor(browser, { askUser, signal = null }) {
+  const overlay = browser.overlay;
   const observe = async (prefix) => {
     try {
       return `${prefix}\n\n${formatSnapshot(await browser.snapshot())}`;
@@ -73,38 +74,48 @@ export function createToolExecutor(browser, { askUser }) {
       return observe(`Searched for "${query}".`);
     },
     click: async ({ index, double }) => {
-      const { x, y, tag } = await browser.element(index, 'locate');
+      const target = await browser.locate(index);
+      const { x, y, tag, label } = target;
+      await overlay.pointTo(target, label ? ['click', { label }] : ['clickPlain']);
       await browser.clickAt(x, y, { clickCount: double ? 2 : 1 });
       return observe(`Clicked [${index}] <${tag}>.`);
     },
     click_at: async ({ x, y }) => {
+      await overlay.pointTo({ x, y }, ['clickPlain']);
       await browser.clickAt(x, y);
       return observe(`Clicked at (${x}, ${y}).`);
     },
     type_text: async ({ index, text, clear = true, submit = false }) => {
-      const { x, y } = await browser.element(index, 'locate');
-      await browser.clickAt(x, y);
+      const target = await browser.locate(index);
+      await overlay.pointTo(target, target.secret ? ['typeSecret'] : ['type', { text: preview(text) }]);
+      await browser.clickAt(target.x, target.y);
       if (clear) await browser.element(index, 'select-all');
       await browser.insertText(text);
       if (submit) await browser.pressKey('Enter');
       return observe(`Typed into [${index}]${submit ? ' and pressed Enter' : ''}.`);
     },
     press_key: async ({ key }) => {
+      await overlay.say('key', { key });
       await browser.pressKey(key);
       return observe(`Pressed ${key}.`);
     },
     select_option: async ({ index, option }) => {
+      await overlay.pointTo(await browser.locate(index), ['select', { option: preview(option) }]);
       const { selected } = await browser.element(index, 'select-option', option);
       return observe(`Selected "${selected}" in [${index}].`);
     },
     hover: async ({ index }) => {
-      const { x, y } = await browser.element(index, 'locate');
-      await browser.hoverAt(x, y);
+      const target = await browser.locate(index);
+      await overlay.pointTo(target, target.label ? ['hover', { label: target.label }] : ['hoverPlain']);
+      await browser.hoverAt(target.x, target.y);
       return observe(`Hovering [${index}].`);
     },
     scroll: async ({ direction, index, screens = 1 }) => {
-      const at = Number.isInteger(index) ? await browser.element(index, 'locate') : null;
+      const at = Number.isInteger(index) ? await browser.locate(index) : null;
       const sign = direction === 'up' ? -1 : 1;
+      const caption = [direction === 'up' ? 'scrollUp' : 'scrollDown'];
+      if (at) await overlay.pointTo(at, caption);
+      else await overlay.say(...caption);
       await browser.scroll(sign * Math.min(Math.max(screens, 0.2), 10), at);
       return observe(`Scrolled ${direction}.`);
     },
@@ -122,7 +133,7 @@ export function createToolExecutor(browser, { askUser }) {
       return observe(`Did ${action}.`);
     },
     wait: async ({ seconds }) => {
-      await new Promise((r) => setTimeout(r, Math.min(Math.max(seconds, 0.5), 15) * 1000));
+      await sleep(Math.min(Math.max(seconds, 0.5), 15) * 1000, signal);
       return observe(`Waited ${seconds}s.`);
     },
     list_tabs: async () => {
@@ -163,6 +174,23 @@ export function createToolExecutor(browser, { askUser }) {
       return { output: `Error: ${err.message}`, isError: true };
     }
   };
+}
+
+/** Resolves after `ms`, or as soon as the task is stopped. */
+function sleep(ms, signal) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer);
+      resolve();
+    }, { once: true });
+  });
+}
+
+/** Typed text as shown in the on-page caption: one line, kept short. */
+function preview(text) {
+  const line = String(text).replace(/\s+/g, ' ').trim();
+  return line.length > 32 ? `${line.slice(0, 32)}…` : line;
 }
 
 export function normalizeUrl(url) {
