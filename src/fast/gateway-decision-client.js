@@ -4,6 +4,7 @@
 // come back without a confidence, which the gate needs, so it is derived here.
 
 import { isProbability } from './chat-judge-client.js';
+import { providerMessage } from '../lib/failure.js';
 
 const REQUEST_TIMEOUT_MS = 8000;
 
@@ -24,7 +25,7 @@ export async function askGatewayDecision({ baseUrl, apiKey, model, state, questi
     body: JSON.stringify({ state, questions: toGatewayQuestions(questions) }),
   });
   if (!res.ok) {
-    const detail = (await res.text().catch(() => '')).slice(0, 300);
+    const detail = providerMessage(await res.text().catch(() => ''));
     throw new Error(`Fast layer request failed (HTTP ${res.status}): ${detail}`);
   }
   const body = await res.json();

@@ -106,190 +106,208 @@
   <section id="settingsView" hidden>
     <h2 data-i18n="settings.title"></h2>
 
-    <div id="mainProvider">
-    <label class="field">
-      <span data-i18n="settings.provider"></span>
-      <select id="provider" data-field="provider">
-        <option value="chatgpt" data-i18n="settings.provider.chatgpt"></option>
-        <option value="compatible" data-i18n="settings.provider.compatible"></option>
-      </select>
-    </label>
-
-    <div id="chatgptSection" class="card" data-field="chatgptSection">
-      <div class="row between">
-        <span id="authStatus"></span>
-        <button type="button" id="logoutBtn" data-i18n="auth.logout" hidden></button>
-      </div>
-      <button type="button" class="primary" id="loginBtn" data-i18n="auth.login"></button>
-      <div id="deviceBox" class="device" hidden>
-        <p data-i18n="auth.deviceHelp"></p>
-        <code id="deviceCode" dir="ltr"></code>
-        <div class="row between">
-          <a id="deviceLink" target="_blank" rel="noopener" data-i18n="auth.openPage"></a>
-          <button type="button" id="cancelLoginBtn" data-i18n="common.cancel"></button>
-        </div>
-      </div>
-      <details>
-        <summary data-i18n="auth.importSummary"></summary>
-        <p class="muted"><span data-i18n="auth.importRun"></span> <code dir="ltr">codex login</code> <span data-i18n="auth.importThen"></span> <code dir="ltr">~/.codex/auth.json</code> <span data-i18n="auth.importHere"></span></p>
-        <textarea id="authJson" rows="4" dir="ltr" placeholder='{"tokens": {...}}'></textarea>
-        <button type="button" id="importBtn" data-i18n="auth.import"></button>
-      </details>
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" id="tabModels" aria-controls="panelModels" aria-selected="true" data-i18n="tabs.models"></button>
+      <button type="button" role="tab" id="tabFast" aria-controls="panelFast" aria-selected="false" tabindex="-1" data-i18n="tabs.fast"></button>
     </div>
 
-    <div id="compatibleSection" class="card" data-field="compatibleSection" hidden>
-      <label class="field">
-        <span data-i18n="compat.preset"></span>
-        <select id="preset" data-field="preset"></select>
-      </label>
-      <label class="field">
-        <span>Base URL</span>
-        <input id="baseUrl" data-field="baseUrl" dir="ltr" />
-      </label>
-      <label class="field">
-        <span>API Key</span>
-        <input id="apiKey" data-field="apiKey" type="password" dir="ltr" autocomplete="off" />
-      </label>
-    </div>
+    <div id="panelModels" role="tabpanel" aria-labelledby="tabModels">
+      <fieldset class="frame" data-kind="main">
+        <legend><span class="frame-dot"></span><span data-i18n="frame.main"></span></legend>
+        <div id="mainProvider" class="fields">
+          <label class="field">
+            <span data-i18n="settings.provider"></span>
+            <select id="provider" data-field="provider">
+              <option value="chatgpt" data-i18n="settings.provider.chatgpt"></option>
+              <option value="compatible" data-i18n="settings.provider.compatible"></option>
+            </select>
+          </label>
 
-    <div class="card">
-      <label class="field">
-        <span data-i18n="model.label"></span>
-        <input id="modelSearch" data-field="modelSearch" type="search" class="model-search" dir="ltr" autocomplete="off" data-i18n-placeholder="model.search" hidden />
-        <div class="row">
-          <select id="modelSelect" data-field="modelSelect" class="grow"></select>
-          <button type="button" class="ghost icon" id="refreshModelsBtn" data-field="refresh" data-i18n-title="model.refresh">↻</button>
-        </div>
-        <input id="modelInput" data-field="modelInput" dir="ltr" data-i18n-placeholder="model.manual" />
-        <small class="muted" id="modelInfo" data-field="modelInfo"></small>
-      </label>
-      <label class="field">
-        <span data-i18n="effort.label"></span>
-        <select id="effort" data-field="effort"></select>
-      </label>
-    </div>
-    </div>
-
-    <div class="card">
-      <label class="check"><input type="checkbox" id="fallbackEnabled" /> <strong data-i18n="fallback.title"></strong></label>
-      <p class="muted" data-i18n="fallback.desc"></p>
-      <div id="fallbackProvider" class="fields">
-        <label class="field">
-          <span data-i18n="settings.provider"></span>
-          <select data-field="provider">
-            <option value="chatgpt" data-i18n="settings.provider.chatgpt"></option>
-            <option value="compatible" data-i18n="settings.provider.compatible"></option>
-          </select>
-        </label>
-        <p class="muted" data-field="chatgptSection" data-i18n="fallback.sameLogin"></p>
-        <div class="fields" data-field="compatibleSection">
-          <label class="field"><span data-i18n="compat.preset"></span><select data-field="preset"></select></label>
-          <label class="field"><span>Base URL</span><input data-field="baseUrl" dir="ltr" /></label>
-          <label class="field"><span>API Key</span><input data-field="apiKey" type="password" dir="ltr" autocomplete="off" /></label>
-        </div>
-        <label class="field">
-          <span data-i18n="model.label"></span>
-          <input data-field="modelSearch" type="search" class="model-search" dir="ltr" autocomplete="off" data-i18n-placeholder="model.search" hidden />
-          <div class="row">
-            <select data-field="modelSelect" class="grow"></select>
-            <button type="button" class="ghost icon" data-field="refresh" data-i18n-title="model.refresh">↻</button>
-          </div>
-          <input data-field="modelInput" dir="ltr" data-i18n-placeholder="model.manual" />
-          <small class="muted" data-field="modelInfo"></small>
-        </label>
-        <label class="field"><span data-i18n="effort.label"></span><select data-field="effort"></select></label>
-      </div>
-    </div>
-
-    <div class="card">
-      <label class="field">
-        <span data-i18n="settings.maxSteps"></span>
-        <input id="maxSteps" type="number" min="5" max="300" />
-      </label>
-      <label class="check"><input type="checkbox" id="vision" /> <span data-i18n="settings.vision"></span></label>
-      <label class="check"><input type="checkbox" id="allowJavascript" /> <span data-i18n="settings.javascript"></span></label>
-      <label class="check"><input type="checkbox" id="showCursor" /> <span data-i18n="settings.showCursor"></span></label>
-    </div>
-
-    <div class="card">
-      <label class="check switch"><input type="checkbox" id="replyLangEnabled" role="switch" /> <strong data-i18n="replyLang.title"></strong></label>
-      <p class="muted" data-i18n="replyLang.desc"></p>
-      <label class="field" id="replyLangField">
-        <span data-i18n="replyLang.label"></span>
-        <select id="replyLang">
-          <option value="" disabled data-i18n="replyLang.pick"></option>
-          <option value="ar">العربية</option>
-          <option value="en">English</option>
-        </select>
-      </label>
-    </div>
-
-    <div class="card">
-      <label class="check"><input type="checkbox" id="fastEnabled" /> <strong data-i18n="fast.title"></strong></label>
-      <p class="muted" data-i18n="fast.desc"></p>
-      <div id="fastFields" class="fields">
-        <label class="field">
-          <span data-i18n="fast.provider"></span>
-          <select id="fastProvider"></select>
-        </label>
-        <label class="field">
-          <span data-i18n="fast.mode"></span>
-          <select id="fastMode">
-            <option value="auto" data-i18n="fast.mode.auto"></option>
-            <option value="hints" data-i18n="fast.mode.hints"></option>
-          </select>
-        </label>
-        <label class="field">
-          <span>API Key</span>
-          <input id="fastApiKey" type="password" dir="ltr" autocomplete="off" />
-        </label>
-        <label class="field">
-          <span data-i18n="model.label"></span>
-          <input id="fastModelSearch" type="search" class="model-search" dir="ltr" autocomplete="off" data-i18n-placeholder="model.search" hidden />
-          <div class="row">
-            <select id="fastModelSelect" class="grow"></select>
-            <button type="button" class="ghost icon" id="fastModelsBtn" data-i18n-title="model.refresh">↻</button>
-          </div>
-          <input id="fastModel" dir="ltr" data-i18n-placeholder="model.manual" />
-        </label>
-        <label class="field"><span>Base URL</span><input id="fastBaseUrl" dir="ltr" /></label>
-        <div class="row">
-          <label class="field grow"><span data-i18n="fast.minProb"></span><input id="fastMinProb" type="number" min="0.3" max="0.99" step="0.05" /></label>
-          <label class="field grow"><span data-i18n="fast.riskyMax"></span><input id="fastRiskyMax" type="number" min="0.05" max="0.9" step="0.05" /></label>
-        </div>
-        <div class="sub-card">
-          <label class="check"><input type="checkbox" id="fastFallbackEnabled" /> <span data-i18n="fast.fallbackTitle"></span></label>
-          <div id="fastFallbackFields" class="fields">
-            <label class="field"><span data-i18n="fast.provider"></span><select id="fastFallbackProvider"></select></label>
-            <label class="field"><span>API Key</span><input id="fastFallbackApiKey" type="password" dir="ltr" autocomplete="off" /></label>
-            <label class="field">
-              <span data-i18n="model.label"></span>
-              <input id="fastFallbackModelSearch" type="search" class="model-search" dir="ltr" autocomplete="off" data-i18n-placeholder="model.search" hidden />
-              <div class="row">
-                <select id="fastFallbackModelSelect" class="grow"></select>
-                <button type="button" class="ghost icon" id="fastFallbackModelsBtn" data-i18n-title="model.refresh">↻</button>
+          <div id="chatgptSection" class="inset" data-field="chatgptSection">
+            <div class="row between">
+              <span id="authStatus"></span>
+              <button type="button" id="logoutBtn" data-i18n="auth.logout" hidden></button>
+            </div>
+            <button type="button" class="primary" id="loginBtn" data-i18n="auth.login"></button>
+            <div id="deviceBox" class="device" hidden>
+              <p data-i18n="auth.deviceHelp"></p>
+              <code id="deviceCode" dir="ltr"></code>
+              <div class="row between">
+                <a id="deviceLink" target="_blank" rel="noopener" data-i18n="auth.openPage"></a>
+                <button type="button" id="cancelLoginBtn" data-i18n="common.cancel"></button>
               </div>
-              <input id="fastFallbackModel" dir="ltr" data-i18n-placeholder="model.manual" />
+            </div>
+            <details>
+              <summary data-i18n="auth.importSummary"></summary>
+              <p class="muted"><span data-i18n="auth.importRun"></span> <code dir="ltr">codex login</code> <span data-i18n="auth.importThen"></span> <code dir="ltr">~/.codex/auth.json</code> <span data-i18n="auth.importHere"></span></p>
+              <textarea id="authJson" rows="4" dir="ltr" placeholder='{"tokens": {...}}'></textarea>
+              <button type="button" id="importBtn" data-i18n="auth.import"></button>
+            </details>
+          </div>
+
+          <div id="compatibleSection" class="fields" data-field="compatibleSection" hidden>
+            <label class="field">
+              <span data-i18n="compat.preset"></span>
+              <select id="preset" data-field="preset"></select>
+            </label>
+            <label class="field">
+              <span>Base URL</span>
+              <input id="baseUrl" data-field="baseUrl" dir="ltr" />
+            </label>
+            <label class="field">
+              <span>API Key</span>
+              <input id="apiKey" data-field="apiKey" type="password" dir="ltr" autocomplete="off" />
             </label>
           </div>
+
+          <label class="field">
+            <span data-i18n="model.label"></span>
+            <input id="modelSearch" data-field="modelSearch" type="search" class="model-search" dir="ltr" autocomplete="off" data-i18n-placeholder="model.search" hidden />
+            <div class="row">
+              <select id="modelSelect" data-field="modelSelect" class="grow"></select>
+              <button type="button" class="ghost icon" id="refreshModelsBtn" data-field="refresh" data-i18n-title="model.refresh">↻</button>
+            </div>
+            <input id="modelInput" data-field="modelInput" dir="ltr" data-i18n-placeholder="model.manual" />
+            <small class="muted" id="modelInfo" data-field="modelInfo"></small>
+          </label>
+          <label class="field">
+            <span data-i18n="effort.label"></span>
+            <select id="effort" data-field="effort"></select>
+          </label>
+          <div class="row"><button type="button" class="test-btn" data-field="test" data-i18n="provider.test"></button><small class="muted test-result" data-field="testResult"></small></div>
         </div>
+      </fieldset>
+
+      <fieldset class="frame" data-kind="backup">
+        <legend><span class="frame-dot"></span><span data-i18n="fallback.title"></span></legend>
+        <label class="check switch"><input type="checkbox" id="fallbackEnabled" role="switch" /> <span data-i18n="fallback.enable"></span></label>
+        <p class="muted" data-i18n="fallback.desc"></p>
+        <div id="fallbackProvider" class="fields">
+          <label class="field">
+            <span data-i18n="settings.provider"></span>
+            <select data-field="provider">
+              <option value="chatgpt" data-i18n="settings.provider.chatgpt"></option>
+              <option value="compatible" data-i18n="settings.provider.compatible"></option>
+            </select>
+          </label>
+          <p class="muted" data-field="chatgptSection" data-i18n="fallback.sameLogin"></p>
+          <div class="fields" data-field="compatibleSection">
+            <label class="field"><span data-i18n="compat.preset"></span><select data-field="preset"></select></label>
+            <label class="field"><span>Base URL</span><input data-field="baseUrl" dir="ltr" /></label>
+            <label class="field"><span>API Key</span><input data-field="apiKey" type="password" dir="ltr" autocomplete="off" /></label>
+          </div>
+          <label class="field">
+            <span data-i18n="model.label"></span>
+            <input data-field="modelSearch" type="search" class="model-search" dir="ltr" autocomplete="off" data-i18n-placeholder="model.search" hidden />
+            <div class="row">
+              <select data-field="modelSelect" class="grow"></select>
+              <button type="button" class="ghost icon" data-field="refresh" data-i18n-title="model.refresh">↻</button>
+            </div>
+            <input data-field="modelInput" dir="ltr" data-i18n-placeholder="model.manual" />
+            <small class="muted" data-field="modelInfo"></small>
+          </label>
+          <label class="field"><span data-i18n="effort.label"></span><select data-field="effort"></select></label>
+          <div class="row"><button type="button" class="test-btn" data-field="test" data-i18n="provider.test"></button><small class="muted test-result" data-field="testResult"></small></div>
+        </div>
+      </fieldset>
+
+      <div class="card">
+        <label class="field">
+          <span data-i18n="settings.maxSteps"></span>
+          <input id="maxSteps" type="number" min="5" max="300" />
+        </label>
+        <label class="check"><input type="checkbox" id="vision" /> <span data-i18n="settings.vision"></span></label>
+        <label class="check"><input type="checkbox" id="allowJavascript" /> <span data-i18n="settings.javascript"></span></label>
+        <label class="check"><input type="checkbox" id="showCursor" /> <span data-i18n="settings.showCursor"></span></label>
+      </div>
+
+      <div class="card">
+        <label class="check switch"><input type="checkbox" id="replyLangEnabled" role="switch" /> <strong data-i18n="replyLang.title"></strong></label>
+        <p class="muted" data-i18n="replyLang.desc"></p>
+        <label class="field" id="replyLangField">
+          <span data-i18n="replyLang.label"></span>
+          <select id="replyLang">
+            <option value="" disabled data-i18n="replyLang.pick"></option>
+            <option value="ar">العربية</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="card">
+        <strong data-i18n="backup.title"></strong>
+        <p class="muted" data-i18n="backup.desc"></p>
         <div class="row">
-          <button type="button" id="fastTestBtn" data-i18n="fast.test"></button>
-          <small class="muted" id="fastTestResult"></small>
+          <button type="button" id="exportBtn" data-i18n="backup.export"></button>
+          <button type="button" id="restoreBtn" data-i18n="backup.restore"></button>
+          <input type="file" id="restoreFile" accept="application/json,.json" hidden />
         </div>
+        <small class="muted" id="backupResult"></small>
       </div>
     </div>
 
-    <div class="card">
-      <strong data-i18n="backup.title"></strong>
-      <p class="muted" data-i18n="backup.desc"></p>
-      <div class="row">
-        <button type="button" id="exportBtn" data-i18n="backup.export"></button>
-        <button type="button" id="restoreBtn" data-i18n="backup.restore"></button>
-        <input type="file" id="restoreFile" accept="application/json,.json" hidden />
-      </div>
-      <small class="muted" id="backupResult"></small>
+    <div id="panelFast" role="tabpanel" aria-labelledby="tabFast" hidden>
+      <fieldset class="frame" data-kind="fast">
+        <legend><span class="frame-dot"></span><span data-i18n="fast.title"></span></legend>
+        <label class="check switch"><input type="checkbox" id="fastEnabled" role="switch" /> <span data-i18n="fast.enable"></span></label>
+        <p class="muted" data-i18n="fast.desc"></p>
+        <div id="fastFields" class="fields">
+          <label class="field">
+            <span data-i18n="fast.provider"></span>
+            <select id="fastProvider"></select>
+          </label>
+          <label class="field">
+            <span data-i18n="fast.mode"></span>
+            <select id="fastMode">
+              <option value="auto" data-i18n="fast.mode.auto"></option>
+              <option value="hints" data-i18n="fast.mode.hints"></option>
+            </select>
+          </label>
+          <label class="field">
+            <span>API Key</span>
+            <input id="fastApiKey" type="password" dir="ltr" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span data-i18n="model.label"></span>
+            <input id="fastModelSearch" type="search" class="model-search" dir="ltr" autocomplete="off" data-i18n-placeholder="model.search" hidden />
+            <div class="row">
+              <select id="fastModelSelect" class="grow"></select>
+              <button type="button" class="ghost icon" id="fastModelsBtn" data-i18n-title="model.refresh">↻</button>
+            </div>
+            <input id="fastModel" dir="ltr" data-i18n-placeholder="model.manual" />
+          </label>
+          <label class="field"><span>Base URL</span><input id="fastBaseUrl" dir="ltr" /></label>
+          <div class="row">
+            <label class="field grow"><span data-i18n="fast.minProb"></span><input id="fastMinProb" type="number" min="0.3" max="0.99" step="0.05" /></label>
+            <label class="field grow"><span data-i18n="fast.riskyMax"></span><input id="fastRiskyMax" type="number" min="0.05" max="0.9" step="0.05" /></label>
+          </div>
+          <div class="row">
+            <button type="button" class="test-btn" id="fastTestBtn" data-i18n="fast.test"></button>
+            <small class="muted test-result" id="fastTestResult"></small>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="frame" data-kind="backup" id="fastFallbackFrame">
+        <legend><span class="frame-dot"></span><span data-i18n="fast.fallbackTitle"></span></legend>
+        <label class="check switch"><input type="checkbox" id="fastFallbackEnabled" role="switch" /> <span data-i18n="fast.fallbackEnable"></span></label>
+        <div id="fastFallbackFields" class="fields">
+          <label class="field"><span data-i18n="fast.provider"></span><select id="fastFallbackProvider"></select></label>
+          <label class="field"><span>API Key</span><input id="fastFallbackApiKey" type="password" dir="ltr" autocomplete="off" /></label>
+          <label class="field">
+            <span data-i18n="model.label"></span>
+            <input id="fastFallbackModelSearch" type="search" class="model-search" dir="ltr" autocomplete="off" data-i18n-placeholder="model.search" hidden />
+            <div class="row">
+              <select id="fastFallbackModelSelect" class="grow"></select>
+              <button type="button" class="ghost icon" id="fastFallbackModelsBtn" data-i18n-title="model.refresh">↻</button>
+            </div>
+            <input id="fastFallbackModel" dir="ltr" data-i18n-placeholder="model.manual" />
+          </label>
+          <div class="row"><button type="button" class="test-btn" id="fastFallbackTestBtn" data-i18n="provider.test"></button><small class="muted test-result" id="fastFallbackTestResult"></small></div>
+        </div>
+      </fieldset>
     </div>
+
 
     <p class="error" id="settingsError" hidden></p>
     <div class="row end sticky-actions">

@@ -2,6 +2,7 @@
 // answers settings and model-list requests, and owns the ChatGPT sign-in.
 
 import { SessionRunner } from './session-runner.js';
+import { testProviderSlot } from '../agent/model-session.js';
 import { fastClientFor } from '../fast/clients.js';
 import { exportBackup, importBackup } from '../lib/backup.js';
 import { COMPATIBLE_PRESETS, FAST_PRESETS, chatModelsFor, loadSettings, saveSettings } from '../lib/settings.js';
@@ -148,6 +149,8 @@ async function handleRequest(msg, sender) {
       });
       return { model, noul: answers.greeting?.noul ?? null };
     }
+    case 'provider-test':
+      return testProviderSlot(msg.slot, await loadSettings());
     case 'list-fast-models': {
       const fixed = FAST_PRESETS[msg.config.provider]?.models;
       if (fixed) return fixed.map((id) => ({ id, name: id, efforts: [], decision: true }));
@@ -156,7 +159,8 @@ async function handleRequest(msg, sender) {
     case 'list-models': {
       const settings = msg.settings ?? (await loadSettings());
       if (settings.provider === 'chatgpt') return listChatgptModels();
-      const list = (await listCompatibleModels(settings.compatible.baseUrl, settings.compatible.apiKey)).filter((m) => !m.decision);
+      // The agent works through tool calls, so models known not to support them are left out.
+      const list = (await listCompatibleModels(settings.compatible.baseUrl, settings.compatible.apiKey)).filter((m) => !m.decision && m.tools !== false);
       return chatModelsFor(settings.compatible.preset, list);
     }
     case 'sessions-list':

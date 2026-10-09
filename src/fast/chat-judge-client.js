@@ -3,6 +3,8 @@
 // question. The probabilities are the model's own estimate, not calibrated like
 // Jev's, which is why gateway presets ask for a higher minimum probability.
 
+import { providerMessage } from '../lib/failure.js';
+
 const REQUEST_TIMEOUT_MS = 15000;
 
 export async function askChatJudge({ baseUrl, apiKey, model, state, questions, signal }) {
@@ -23,7 +25,7 @@ export async function askChatJudge({ baseUrl, apiKey, model, state, questions, s
     }),
   });
   if (!res.ok) {
-    const detail = (await res.text().catch(() => '')).slice(0, 300);
+    const detail = providerMessage(await res.text().catch(() => ''));
     throw new Error(`Fast layer request failed (HTTP ${res.status}): ${detail}`);
   }
   const body = await res.json();
