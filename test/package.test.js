@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import zlib from 'node:zlib';
-import { overlongDescriptions, packageFiles, storeManifest, zip } from '../scripts/package.mjs';
+import { crc32, overlongDescriptions, packageFiles, storeManifest, zip } from '../scripts/package.mjs';
 
 test('the store package holds only what the extension runs', () => {
   const files = packageFiles();
@@ -21,6 +21,11 @@ test('the uploaded manifest drops the development key', () => {
 
 test('every locale description fits the store limit', () => {
   assert.deepEqual(overlongDescriptions(), []);
+});
+
+test('crc32 matches the standard check value', () => {
+  assert.equal(crc32(Buffer.from('123456789')), 0xcbf43926);
+  assert.equal(crc32(Buffer.alloc(0)), 0);
 });
 
 test('zip writes entries that inflate back to their bytes', () => {

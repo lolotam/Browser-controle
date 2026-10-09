@@ -124,7 +124,8 @@ const compose = async (file, left, right) => {
 fs.mkdirSync(OUT, { recursive: true });
 
 // 1. Mid-task: the cursor glides to "Search flights" while the panel lists the steps.
-hold = Promise.withResolvers();
+hold = {};
+hold.promise = new Promise((resolve) => { hold.resolve = resolve; });
 await panel.fill('#input', 'Find the cheapest flight from Cairo to Dubai on 20 Oct and compare it with the direct flights');
 await panel.click('#sendBtn');
 await panel.waitForFunction(() => document.querySelectorAll('.step').length >= 5, null, { timeout: 30000 }); // the click step started

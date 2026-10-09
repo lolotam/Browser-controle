@@ -84,7 +84,7 @@ English (with an Arabic translation)
 | Asset | Dimensions | Status | Filename |
 |-------|-----------|--------|----------|
 | Store Icon | 128×128 PNG | ✅ Ready | `icons/icon-128.png` |
-| Screenshot 1: task running | 1280×800 | 🟡 Retake once the live cursor (PR #8) is merged | `store-assets/screenshot-1-working.png` |
+| Screenshot 1: task running, live cursor clicking | 1280×800 | ✅ Ready | `store-assets/screenshot-1-working.png` |
 | Screenshot 2: final report | 1280×800 | ✅ Ready | `store-assets/screenshot-2-report.png` |
 | Screenshot 3: settings | 1280×800 | ✅ Ready | `store-assets/screenshot-3-settings.png` |
 | Small Promo Tile | 440×280 | ✅ Ready | `store-assets/promo-small-440x280.png` |
@@ -163,7 +163,6 @@ Paste each line into the matching field of the dashboard's Privacy tab.
 1. **Developer account:** register at the dashboard (one-time US$5 fee) and verify the contact email.
 2. **Google sign-in:** the store assigns a new extension ID, so add `https://<store-id>.chromiumapp.org/` to the OAuth client's authorized redirect URIs in Google Cloud. Then replace the manifest `key` with the store item's public key (Dashboard → Package → View public key), so unpacked development builds share the store ID. Also enable the Google Drive API for the project, and publish the OAuth consent screen with the `drive.appdata` scope (Google may ask to verify the app).
 3. **Privacy policy link** must be live (merge this branch).
-4. **Live cursor:** both descriptions mention the on-page cursor and Stop button, which come from PR #8. Merge it before packaging (then retake screenshot 1), or remove that line from both descriptions.
 
 ### Known Issues / Limitations (review risks)
 - **`debugger` + `<all_urls>`** puts the item in in-depth review, which can take longer than usual. The justifications above explain both.

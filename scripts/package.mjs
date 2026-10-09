@@ -43,6 +43,19 @@ export function overlongDescriptions(root = ROOT) {
   });
 }
 
+// CRC-32 (IEEE), computed here because zlib.crc32 needs Node 22.2 and the docs promise Node 20.
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+
+export function crc32(data) {
+  let crc = 0xffffffff;
+  for (const byte of data) crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
 /** A minimal ZIP writer (deflate, no external tools), enough for the store upload. */
 export function zip(entries) {
   const locals = [];
@@ -51,7 +64,7 @@ export function zip(entries) {
   for (const { name, data } of entries) {
     const nameBuf = Buffer.from(name, 'utf8');
     const deflated = zlib.deflateRawSync(data, { level: 9 });
-    const crc = zlib.crc32(data);
+    const crc = crc32(data);
     const header = (sig, size) => {
       const b = Buffer.alloc(size);
       b.writeUInt32LE(sig, 0);
