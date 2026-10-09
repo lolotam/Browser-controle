@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "test": "node --test \"test/**/*.test.js\"",
-    "e2e": "node test/e2e/run-e2e.mjs"
+    "e2e": "node test/e2e/run-e2e.mjs",
+    "package": "node scripts/package.mjs",
+    "store-screenshots": "node scripts/store-screenshots.mjs"
   },
   "devDependencies": {
     "playwright-core": "1.56.1"

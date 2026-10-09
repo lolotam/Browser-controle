@@ -1,4 +1,4 @@
-# Browser Controle — AI agent that operates your Chrome
+# Postora Browser Agent — AI agent that operates your Chrome
 
 A Chrome side-panel extension. Give it a task in Arabic or English and it carries it out in your real browser, one step at a time: it searches, clicks, types, picks from menus, scrolls, switches tabs, and reads and collects information. When it finishes, it returns a **final report** with the results and sources.
 
@@ -29,6 +29,10 @@ A Chrome side-panel extension. Give it a task in Arabic or English and it carrie
 - **Optional Google sign-in:** the header's account button opens a Google sign-in window; the extension keeps only the name, email and picture, shows the picture in the header, and sends the email with feedback. While signed in, settings, API keys and the ChatGPT sign-in are backed up after every change to a hidden folder of the user's own Google Drive (`appDataFolder`), and a fresh install restores them at sign-in. No backend or client secret is involved.
 - **Sessions:** several sessions, saved on your computer, with search, rename and delete. Sessions can run tasks at the same time; each works only in its own Chrome tab group and never brings a tab to the front. The side panel follows the tab in front: a new tab starts on a blank session, and a tab where a task ran (or that the user picked a session for) keeps its session.
 - **Interface:** Arabic or English, light or dark following the system. The agent replies in the language of the task, or always in a language you switch on in settings. Settings can be backed up to a file and restored after reinstalling.
+
+## Privacy
+
+The extension has no server of its own: tasks and page content go only to the AI provider you choose. See the [privacy policy](docs/privacy.md).
 
 ## Status
 

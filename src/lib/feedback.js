@@ -10,7 +10,7 @@ const MAX_DISMISSALS = 3;
 /** The form post. Only what the user typed, the rating and app details: no page content. */
 export function feedbackPayload({ message, rating, email, version, language }) {
   return {
-    _subject: `Browser Agent feedback${rating ? ` — ${rating}★` : ''}`,
+    _subject: `Postora Browser Agent feedback${rating ? ` — ${rating}★` : ''}`,
     message: message || '(rating only)',
     rating: rating ?? null,
     email: email || '',

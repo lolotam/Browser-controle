@@ -20,10 +20,8 @@
     "unlimitedStorage",
     "tabs",
     "tabGroups",
-    "activeTab",
     "scripting",
     "debugger",
-    "webNavigation",
     "declarativeNetRequestWithHostAccess"
   ],
   "host_permissions": [

@@ -30,7 +30,7 @@ export class SessionRunner {
     this.pendingQuestion = null;
     this.saveTimer = null;
     this.disposed = false;
-    this.browser = new BrowserController({ title: meta.title || 'Browser Agent', color, isTakenByOther: (tab) => isTakenByOther(this.id, tab) });
+    this.browser = new BrowserController({ title: meta.title || 'Postora', color, isTakenByOther: (tab) => isTakenByOther(this.id, tab) });
     this.browser.groupId = body.groupId ?? null;
   }
 

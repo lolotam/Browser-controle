@@ -6,3 +6,5 @@ test-results/
 *.crx
 *.pem
 .env*
+dist/
+.claude/worktrees/
