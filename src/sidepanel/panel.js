@@ -775,6 +775,7 @@ function fillForm() {
   $('maxSteps').value = settings.maxSteps;
   $('vision').checked = settings.vision;
   $('allowJavascript').checked = settings.allowJavascript;
+  $('showCursor').checked = settings.showCursor;
   $('replyLangEnabled').checked = settings.replyLanguage.enabled;
   $('replyLang').value = settings.replyLanguage.language;
   syncReplyLanguage();
@@ -789,6 +790,7 @@ function readForm() {
   next.maxSteps = Number($('maxSteps').value) || 40;
   next.vision = $('vision').checked;
   next.allowJavascript = $('allowJavascript').checked;
+  next.showCursor = $('showCursor').checked;
   next.replyLanguage = { enabled: $('replyLangEnabled').checked, language: $('replyLang').value };
   next.keys = keyStore.snapshot();
   return next;

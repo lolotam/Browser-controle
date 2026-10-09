@@ -20,6 +20,7 @@ A Chrome side-panel extension. Give it a task in Arabic or English and it carrie
 ## Features
 
 - **Trusted input:** clicks and keystrokes go through the Chrome DevTools Protocol, so they work on sites that ignore synthetic events.
+- **Live cursor:** while a task runs, the page shows the agent's cursor gliding to each target and rippling on clicks, a caption saying what it is doing, a highlight on the element it acts on, and a glowing frame with a Stop button. It is hidden from the screenshots the model sees, and can be turned off in settings.
 - **Page understanding:** numbered interactive elements (including inside shadow DOM), visible text, and screenshots for vision-capable models.
 - **Tools:** navigate, search, click, type, press keys, select options, hover, scroll, read long pages, history, and tab management. JavaScript extraction is optional.
 - **Safety:** the agent must ask you before payments, sending messages, deleting data or typing passwords. Page text is treated as untrusted.

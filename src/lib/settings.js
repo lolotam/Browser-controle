@@ -62,6 +62,8 @@ export const DEFAULT_SETTINGS = {
   maxSteps: 40,
   vision: true,
   allowJavascript: false,
+  // The agent's cursor, captions and Stop bar drawn on the page it controls.
+  showCursor: true,
   uiLanguage: 'auto',
   // Off: the agent replies in the language the task is written in.
   replyLanguage: { enabled: false, language: '' },
