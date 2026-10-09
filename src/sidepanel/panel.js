@@ -3,6 +3,7 @@ import { currentLanguage, resolveLanguage, setLanguage, t } from './i18n.js';
 import { bindSearch, escapeAttr, pickModel, renderPicker } from './model-picker.js';
 import { createKeyStore } from './key-store.js';
 import { createProviderForm } from './provider-form.js';
+import { bindTestButton } from './test-button.js';
 import { FEEDBACK_FORM_ID, afterDismissal, afterRating, sendFeedback, shouldAskForRating } from '../lib/feedback.js';
 import { googleAccount, signInWithGoogle, signOutOfGoogle } from '../lib/google-account.js';
 
@@ -932,28 +933,15 @@ async function loadFastFallbackModels(showErrors = false) {
   }
 }
 
-/** state: 'ok' (green), 'fail' (red) or '' (neutral); the button and the message share it. */
-function showFastStatus(state, text) {
-  $('fastTestBtn').dataset.state = state;
-  $('fastTestResult').dataset.state = state;
-  $('fastTestResult').textContent = text;
+async function testFast(config) {
+  const started = performance.now();
+  const { model } = await request('fast-test', { config });
+  return t('fast.testOk', { model, ms: Math.round(performance.now() - started) });
 }
 
-// A pass or fail describes the settings that were tested; editing them makes it stale.
-['input', 'change'].forEach((type) => $('fastFields').addEventListener(type, (e) => {
-  if (e.target !== $('fastTestBtn') && $('fastTestBtn').dataset.state) showFastStatus('', '');
-}));
-
-$('fastTestBtn').addEventListener('click', async () => {
-  showFastStatus('', t('fast.testing'));
-  const started = performance.now();
-  try {
-    const { model } = await request('fast-test', { config: readFastForm() });
-    showFastStatus('ok', t('fast.testOk', { model, ms: Math.round(performance.now() - started) }));
-  } catch (err) {
-    showFastStatus('fail', `✗ ${err.message}`);
-  }
-});
+/** state: 'ok' (green), 'fail' (red) or '' (neutral); model-list errors use it too. */
+const showFastStatus = bindTestButton({ button: $('fastTestBtn'), result: $('fastTestResult'), scope: $('fastFields'), run: () => testFast(readFastForm()) });
+bindTestButton({ button: $('fastFallbackTestBtn'), result: $('fastFallbackTestResult'), scope: $('fastFallbackFields'), run: () => testFast(readFastFallback()) });
 
 $('exportBtn').addEventListener('click', async () => {
   try {

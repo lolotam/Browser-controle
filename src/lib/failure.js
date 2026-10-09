@@ -27,3 +27,19 @@ function codeFor(error, detail) {
   if (error instanceof TypeError && /fetch|network/i.test(detail)) return 'network';
   return 'other';
 }
+
+/**
+ * The provider's own message from an error body, whose JSON shape differs by
+ * provider ({error: {message}}, {detail: {message}}, {error: "..."}), else the raw text.
+ */
+export function providerMessage(text, max = 300) {
+  let message = text;
+  try {
+    const body = JSON.parse(text);
+    const inner = body.error ?? body.detail ?? body;
+    message = typeof inner === 'string' ? inner : inner.message ?? inner.msg ?? text;
+  } catch {
+    // not JSON: an HTML error page or plain text, shown as it is
+  }
+  return String(message).slice(0, max);
+}

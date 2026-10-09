@@ -2,6 +2,8 @@
 // it takes a `state` plus typed questions (choice / score / noul) and returns
 // typed answers with calibrated probabilities, typically in well under a second.
 
+import { providerMessage } from '../lib/failure.js';
+
 const REQUEST_TIMEOUT_MS = 8000;
 
 export async function askJev({ baseUrl, apiKey, model, state, questions, signal }) {
@@ -19,7 +21,7 @@ export async function askJev({ baseUrl, apiKey, model, state, questions, signal 
     body: JSON.stringify({ model, state, questions }),
   });
   if (!res.ok) {
-    const detail = (await res.text().catch(() => '')).slice(0, 300);
+    const detail = providerMessage(await res.text().catch(() => ''));
     throw new Error(`Jev request failed (HTTP ${res.status}): ${detail}`);
   }
   const body = await res.json();
