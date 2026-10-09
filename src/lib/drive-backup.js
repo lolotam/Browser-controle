@@ -6,6 +6,7 @@
 
 import { exportBackup, importBackup } from './backup.js';
 import { googleAccessToken } from './google-account.js';
+import { mergeSettings } from './settings.js';
 
 const FILE_NAME = 'browser-agent-backup.json';
 const FILES = 'https://www.googleapis.com/drive/v3/files';
@@ -62,12 +63,26 @@ async function saveState(state) {
   return state;
 }
 
+// A manual backup, a change-triggered one and a restore must not overlap: an older
+// upload finishing last would overwrite newer settings in Drive, and two first
+// uploads would create two files.
+let queue = Promise.resolve();
+function serial(operation) {
+  const run = queue.then(operation);
+  queue = run.catch(() => {});
+  return run;
+}
+
 /**
  * Uploads the current settings unless Drive already has them. A failure is kept
  * in the state (shown in the account menu) rather than thrown, since this runs
  * on its own after every settings change.
  */
-export async function backUpToDrive({ getToken = googleAccessToken } = {}) {
+export function backUpToDrive({ getToken = googleAccessToken } = {}) {
+  return serial(() => upload(getToken));
+}
+
+async function upload(getToken) {
   const data = await exportBackup();
   const hash = await backupHash(data);
   const state = await driveBackupState();
@@ -88,14 +103,20 @@ export function isFreshSetup({ settings, chatgptAuth }) {
 }
 
 /** Restores the Drive backup; returns the restored settings. */
-export async function restoreFromDrive({ getToken = googleAccessToken } = {}) {
+export function restoreFromDrive({ getToken = googleAccessToken } = {}) {
+  return serial(() => restore(getToken));
+}
+
+async function restore(getToken) {
   const token = await getToken();
   const file = await findBackupFile(token);
   if (!file) throw new Error('There is no backup in Google Drive yet.');
   const data = await readBackupFile(token, file.id);
   const settings = await importBackup(data);
-  // Marks the restored settings as already uploaded, so restoring does not upload them straight back.
-  await saveState({ fileId: file.id, at: Date.parse(file.modifiedTime) || Date.now(), hash: await backupHash(await exportBackup()), error: null });
+  // Records what Drive holds, so restoring does not upload it straight back; a local
+  // ChatGPT sign-in the file lacks (and the import keeps) still gets uploaded.
+  const held = { settings: mergeSettings(data.settings ?? {}), chatgptAuth: data.chatgptAuth ?? null };
+  await saveState({ fileId: file.id, at: Date.parse(file.modifiedTime) || Date.now(), hash: await backupHash(held), error: null });
   return settings;
 }
 
@@ -104,10 +125,12 @@ export async function restoreFromDrive({ getToken = googleAccessToken } = {}) {
  * already set up keeps them and is told a backup exists; with no backup yet, the
  * first one is made.
  */
-export async function afterGoogleSignIn({ getToken = googleAccessToken } = {}) {
-  await saveState({}); // the state names a file in the previous account's Drive
-  const file = await findBackupFile(await getToken());
-  if (!file) return { backup: await backUpToDrive({ getToken }) };
-  if (isFreshSetup(await exportBackup())) return { restored: await restoreFromDrive({ getToken }) };
-  return { available: file.modifiedTime };
+export function afterGoogleSignIn({ getToken = googleAccessToken } = {}) {
+  return serial(async () => {
+    await saveState({}); // the state names a file in the previous account's Drive
+    const file = await findBackupFile(await getToken());
+    if (!file) return { backup: await upload(getToken) };
+    if (isFreshSetup(await exportBackup())) return { restored: await restore(getToken) };
+    return { available: file.modifiedTime };
+  });
 }

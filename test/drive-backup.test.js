@@ -80,6 +80,24 @@ test('an install that is already set up keeps its settings and is told a backup 
   assert.equal(local.settings.compatible.apiKey, 'or-key');
 });
 
+test('overlapping backups make one file and leave the newest settings in Drive', async () => {
+  local.settings = setUp;
+  const first = backUpToDrive({ getToken });
+  local.settings = { ...setUp, maxSteps: 25 };
+  const second = backUpToDrive({ getToken });
+  await Promise.all([first, second]);
+  assert.equal(calls.filter((c) => c === 'POST /drive/v3/files').length, 1);
+  assert.equal(drive.content.settings.maxSteps, 25);
+});
+
+test('a local ChatGPT sign-in that the restored file lacks is still uploaded afterwards', async () => {
+  drive = { id: 'file1', content: { format: 'browser-agent-backup', version: 1, settings: setUp, chatgptAuth: null } };
+  local.chatgptAuth = { tokens: { refresh_token: 'local' } };
+  await restoreFromDrive({ getToken });
+  await backUpToDrive({ getToken });
+  assert.deepEqual(drive.content.chatgptAuth, { tokens: { refresh_token: 'local' } });
+});
+
 test('a Drive error is kept for the account menu, not thrown', async () => {
   local.settings = setUp;
   stubDrive({ status: 403 });
