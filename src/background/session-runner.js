@@ -38,16 +38,20 @@ export class SessionRunner {
     return Boolean(this.abort);
   }
 
-  attach(port) {
+  /** `early` holds what the panel sent before this session finished loading. */
+  attach(port, early = []) {
     this.ports.add(port);
     port.postMessage({ type: 'replay', events: this.transcript, running: this.running, question: this.pendingQuestion?.question ?? null });
     port.onDisconnect.addListener(() => this.ports.delete(port));
-    port.onMessage.addListener((msg) => {
-      if (msg.type === 'run') this.start(msg.text);
-      else if (msg.type === 'stop') this.stop();
-      else if (msg.type === 'answer') this.answer(msg.text);
-      else if (msg.type === 'dismiss-notice') this.emit({ type: 'notice-dismissed', id: msg.id });
-    });
+    port.onMessage.addListener((msg) => this.receive(msg));
+    for (const msg of early) this.receive(msg);
+  }
+
+  receive(msg) {
+    if (msg.type === 'run') this.start(msg.text);
+    else if (msg.type === 'stop') this.stop();
+    else if (msg.type === 'answer') this.answer(msg.text);
+    else if (msg.type === 'dismiss-notice') this.emit({ type: 'notice-dismissed', id: msg.id });
   }
 
   emit(event) {

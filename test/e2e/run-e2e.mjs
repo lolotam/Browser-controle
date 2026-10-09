@@ -165,7 +165,7 @@ function startServer(handlers) {
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, counts, base: `http://127.0.0.1:${server.address().port}` })));
 }
 
-async function runScenario(context, extensionId, { name, task, handlers, fast, expectReport, check }) {
+async function runScenario(context, extensionId, { name, task, handlers, fast, expectReport, check, stopWorker = false }) {
   const { server, counts, base } = await startServer(handlers);
   const panel = await context.newPage();
   const pageErrors = [];
@@ -200,6 +200,13 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
     const target = await context.newPage();
     await target.goto(`${base}/page`);
     await target.bringToFront();
+    if (stopWorker) {
+      // Chrome stops an idle worker while the panel stays open; the panel's first task must still arrive.
+      const cdp = await context.newCDPSession(panel);
+      await cdp.send('ServiceWorker.enable');
+      await cdp.send('ServiceWorker.stopAllWorkers');
+      await panel.waitForTimeout(500);
+    }
 
     await panel.fill('#input', task);
     await panel.click('#sendBtn');
@@ -343,6 +350,14 @@ async function main() {
         handlers: { llm: scriptedLlm() },
         expectReport: 'Result: hello world / Blue',
         check: ({ report }) => (report.includes('screenshot seen: true') ? [] : ['screenshot never reached the model']),
+      })),
+      ...(await runScenario(context, extensionId, {
+        name: 'worker-restart',
+        task: 'Fill the form and report the result',
+        handlers: { llm: scriptedLlm() },
+        stopWorker: true,
+        expectReport: 'Result: hello world / Blue',
+        check: () => [],
       })),
       ...(await runScenario(context, extensionId, {
         name: 'fallback',

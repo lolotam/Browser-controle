@@ -29,3 +29,15 @@ test('a deleted session is not written back by its last events', async () => {
   assert.equal(`session:${meta.id}` in store, false);
   assert.deepEqual(await sessions.listSessions(), []);
 });
+
+test('what the panel sent while the session was loading is handled once it attaches', async () => {
+  const meta = await sessions.createStoredSession('Woken');
+  const runner = new SessionRunner({ meta, body: await sessions.loadSession(meta.id), color: 'cyan', isTakenByOther: () => null, onSessionsChanged: () => {} });
+  const received = [];
+  const port = { postMessage: (event) => received.push(event), onDisconnect: { addListener() {} }, onMessage: { addListener() {} } };
+
+  runner.attach(port, [{ type: 'dismiss-notice', id: 'n1' }]);
+
+  assert.deepEqual(received.map((e) => e.type), ['replay', 'notice-dismissed']);
+  runner.dispose();
+});

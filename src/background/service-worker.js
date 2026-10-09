@@ -91,8 +91,17 @@ chrome.runtime.onConnect.addListener((port) => {
   panels.add(port);
   reserved.delete(sessionId);
   port.onDisconnect.addListener(() => panels.delete(port));
+  // A panel whose port closed when the worker stopped reconnects as it sends, so
+  // its task arrives while the session is still loading; it waits for the runner
+  // instead of being dropped.
+  const early = [];
+  const hold = (msg) => early.push(msg);
+  port.onMessage.addListener(hold);
   runnerFor(sessionId).then(
-    (runner) => runner.attach(port),
+    (runner) => {
+      port.onMessage.removeListener(hold);
+      runner.attach(port, early);
+    },
     () => port.postMessage({ type: 'session-missing' }),
   );
 });
