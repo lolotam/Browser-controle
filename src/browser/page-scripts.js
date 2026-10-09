@@ -109,14 +109,18 @@ export function snapshotPage(maxElements, maxTextChars) {
   };
 }
 
-/** Runs one action against an element indexed by the latest snapshot. */
-export function elementAction(index, action, value) {
+/**
+ * Runs one action against an element indexed by the latest snapshot. `quiet`
+ * skips the outline flash when the on-page overlay draws its own highlight.
+ */
+export function elementAction(index, action, value, quiet) {
   const list = window.__agentElements || [];
   let el = list[index];
   if (!el || !el.isConnected) el = document.querySelector(`[data-agent-idx="${index}"]`);
   if (!el) return { error: `Element [${index}] no longer exists. Call read_page to refresh the element list.` };
 
   const flash = () => {
+    if (quiet) return;
     const prev = el.style.outline;
     el.style.outline = '3px solid #7c3aed';
     setTimeout(() => { el.style.outline = prev; }, 700);
@@ -126,7 +130,17 @@ export function elementAction(index, action, value) {
     el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
     const r = el.getBoundingClientRect();
     flash();
-    return { x: r.left + r.width / 2, y: r.top + r.height / 2, tag: el.tagName.toLowerCase() };
+    const label = (el.getAttribute('aria-label') || el.innerText || el.getAttribute('placeholder') ||
+      el.getAttribute('title') || el.getAttribute('alt') || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    const autocomplete = el.getAttribute('autocomplete') || '';
+    return {
+      x: r.left + r.width / 2,
+      y: r.top + r.height / 2,
+      tag: el.tagName.toLowerCase(),
+      label,
+      rect: { left: r.left, top: r.top, width: r.width, height: r.height },
+      secret: el.type === 'password' || /^(cc-|one-time-code|current-password|new-password)/.test(autocomplete),
+    };
   }
   if (action === 'select-all') {
     el.focus();
