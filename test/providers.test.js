@@ -91,6 +91,29 @@ test('CompatibleSession maps effort to GLM thinking or reasoning_effort', () => 
   assert.equal('reasoning_effort' in plain, false);
 });
 
+test('OpenCode requests carry one stable session id per conversation; other providers get none', async () => {
+  const seen = [];
+  globalThis.fetch = async (url, init) => {
+    seen.push({ url, session: init.headers['x-opencode-session'] });
+    return new Response('data: {"choices":[{"delta":{"content":"OK"}}]}\n\ndata: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } });
+  };
+  const base = { apiKey: 'k', model: 'glm-5.3', effort: '', thinkingStyle: 'none', systemPrompt: 's', tools: [] };
+  const go = new CompatibleSession({ ...base, baseUrl: 'https://opencode.ai/zen/go/v1' });
+  go.addUserMessage('a');
+  await go.next({});
+  go.addUserMessage('b');
+  await go.next({});
+  const other = new CompatibleSession({ ...base, baseUrl: 'https://openrouter.ai/api/v1' });
+  other.addUserMessage('a');
+  await other.next({});
+  assert.match(seen[0].session, /^[0-9a-f-]{36}$/);
+  assert.equal(seen[1].session, seen[0].session);
+  assert.equal(seen[2].session, undefined);
+  assert.notEqual(new CompatibleSession({ ...base, baseUrl: 'https://opencode.ai/zen/v1' }).sessionId, seen[0].session);
+  // A conversation reopened after a worker restart keeps its id.
+  assert.equal(new CompatibleSession({ ...base, baseUrl: 'https://opencode.ai/zen/go/v1', sessionId: 'saved-session-1' }).sessionId, 'saved-session-1');
+});
+
 test('fast settings saved before providers existed keep using TypeSafe Jev', () => {
   const { fast } = mergeSettings({ fast: { enabled: true, apiKey: 'jev', baseUrl: 'https://api.typesafe.ai' } });
   assert.equal(fast.provider, 'typesafe');
