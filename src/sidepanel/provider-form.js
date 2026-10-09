@@ -3,6 +3,7 @@
 
 import { t } from './i18n.js';
 import { bindSearch, escapeAttr, pickModel, renderPicker } from './model-picker.js';
+import { bindTestButton } from './test-button.js';
 
 const TRANSLATED_EFFORTS = { '': 'effort.default', off: 'effort.off', on: 'effort.on' };
 const FALLBACK_EFFORTS = { chatgpt: ['low', 'medium', 'high', 'xhigh'], reasoning_effort: ['off', 'low', 'medium', 'high'], glm: ['on', 'off'], none: [], gemini: ['minimal', 'low', 'medium', 'high'] };
@@ -117,6 +118,15 @@ export function createProviderForm(root, { request, getPresets, keyStore }) {
   f('modelInput').addEventListener('input', () => renderEfforts(f('effort').value));
   f('refresh').addEventListener('click', () => loadModels(true));
   keyStore.register(f('apiKey'), () => f('preset').value);
+  bindTestButton({
+    button: f('test'),
+    result: f('testResult'),
+    scope: root,
+    run: async () => {
+      const { model, ms, reply } = await request('provider-test', { slot: read() });
+      return t('provider.testOk', { model, ms, reply: reply || '—' });
+    },
+  });
   bindSearch(f('modelSearch'), f('modelSelect'), () => models, renderModels);
 
   return {

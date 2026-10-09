@@ -167,6 +167,7 @@
         <span data-i18n="effort.label"></span>
         <select id="effort" data-field="effort"></select>
       </label>
+      <div class="row"><button type="button" class="test-btn" data-field="test" data-i18n="provider.test"></button><small class="muted test-result" data-field="testResult"></small></div>
     </div>
     </div>
 
@@ -198,6 +199,7 @@
           <small class="muted" data-field="modelInfo"></small>
         </label>
         <label class="field"><span data-i18n="effort.label"></span><select data-field="effort"></select></label>
+        <div class="row"><button type="button" class="test-btn" data-field="test" data-i18n="provider.test"></button><small class="muted test-result" data-field="testResult"></small></div>
       </div>
     </div>
 
@@ -270,11 +272,12 @@
               </div>
               <input id="fastFallbackModel" dir="ltr" data-i18n-placeholder="model.manual" />
             </label>
+            <div class="row"><button type="button" class="test-btn" id="fastFallbackTestBtn" data-i18n="provider.test"></button><small class="muted test-result" id="fastFallbackTestResult"></small></div>
           </div>
         </div>
         <div class="row">
-          <button type="button" id="fastTestBtn" data-i18n="fast.test"></button>
-          <small class="muted" id="fastTestResult"></small>
+          <button type="button" class="test-btn" id="fastTestBtn" data-i18n="fast.test"></button>
+          <small class="muted test-result" id="fastTestResult"></small>
         </div>
       </div>
     </div>

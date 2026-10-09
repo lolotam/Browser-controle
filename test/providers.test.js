@@ -112,6 +112,16 @@ test('model lists skip image, video and embedding models and flag decision model
   ]);
 });
 
+test('OpenRouter models are marked by whether they can call tools; lists that do not say stay unmarked', async () => {
+  globalThis.fetch = async () => Response.json({ data: [
+    { id: 'openai/gpt-5', supported_parameters: ['tools', 'reasoning'] },
+    { id: 'some/chat-only', supported_parameters: ['temperature'] },
+    { id: 'local-model' },
+  ] });
+  const models = await listCompatibleModels('https://openrouter.ai/api/v1', 'k');
+  assert.deepEqual(models.map((m) => [m.id, m.tools]), [['openai/gpt-5', true], ['some/chat-only', false], ['local-model', null]]);
+});
+
 test('a public model list still loads when the key is missing or rejected', async () => {
   const sent = [];
   globalThis.fetch = async (url, init) => {

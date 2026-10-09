@@ -23,6 +23,20 @@ function createProviderSession(slot, settings) {
   return new CompatibleSession({ ...c, thinkingStyle: preset.thinkingStyle, systemPrompt, tools });
 }
 
+const TEST_TIMEOUT_MS = 45000;
+
+/**
+ * A real request to a model slot with the tools and prompt a task uses, so a model
+ * that rejects tools or the reasoning setting fails here and not in the first task.
+ */
+export async function testProviderSlot(slot, settings) {
+  const session = createProviderSession(slot, settings);
+  session.addUserMessage('Connection test: reply with the single word OK and do not call any tool.');
+  const started = Date.now();
+  const turn = await session.next({ signal: AbortSignal.timeout(TEST_TIMEOUT_MS) });
+  return { ms: Date.now() - started, model: slotLabel(slot), reply: (turn.text || '').trim().slice(0, 60) };
+}
+
 function slotLabel(slot) {
   if (slot.provider === 'chatgpt') return `ChatGPT · ${slot.chatgpt.model}`;
   return `${COMPATIBLE_PRESETS[slot.compatible.preset]?.label ?? 'API'} · ${slot.compatible.model}`;

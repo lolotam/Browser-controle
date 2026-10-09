@@ -1,6 +1,7 @@
 // Any OpenAI-compatible Chat Completions endpoint: xAI Grok, Z.ai GLM,
 // OpenAI API keys, OpenRouter, or a local server.
 
+import { providerMessage } from '../lib/failure.js';
 import { readSse } from '../lib/sse.js';
 
 const KEEP_FULL_OBSERVATIONS = 2;
@@ -22,7 +23,12 @@ export async function listCompatibleModels(baseUrl, apiKey) {
   return (body.data ?? body.models ?? [])
     .map((m) => ({ ...m, id: String(m.id ?? m.name).replace(/^models\//, '') })) // Gemini may prefix ids with "models/"
     .filter((m) => !NON_CHAT_TYPES.has(m.type) && !NON_CHAT_ID.test(m.id))
-    .map((m) => ({ id: m.id, name: m.id, efforts: [], decision: m.type === 'evaluation' || /^jev-/.test(m.id) }));
+    .map((m) => ({ id: m.id, name: m.id, efforts: [], decision: m.type === 'evaluation' || /^jev-/.test(m.id), tools: supportsTools(m) }));
+}
+
+/** OpenRouter lists each model's parameters; the agent needs tool calls. null: the list does not say. */
+function supportsTools(model) {
+  return Array.isArray(model.supported_parameters) ? model.supported_parameters.includes('tools') : null;
 }
 
 export class CompatibleSession {
@@ -65,7 +71,9 @@ export class CompatibleSession {
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
-      throw new Error(`Model request failed (HTTP ${res.status}): ${detail.slice(0, 400)}`);
+      // OpenRouter's own advice for this one is to drop a tool, which the agent cannot do.
+      if (/support tool use/i.test(detail)) throw new Error(`Model request failed (HTTP ${res.status}): this model cannot call tools, which the agent needs to use the browser. Pick another model.`);
+      throw new Error(`Model request failed (HTTP ${res.status}): ${providerMessage(detail, 400)}`);
     }
 
     const acc = createAccumulator();
