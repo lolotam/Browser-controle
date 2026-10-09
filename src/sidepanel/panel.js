@@ -41,7 +41,22 @@ function connect() {
   port.onDisconnect.addListener(() => { port = null; });
 }
 
-function send(message) {
+// Picking the session (as the panel opens, or after a tab switch) takes a round
+// trip to the worker. A message sent meanwhile waits for it: sent at once, it would
+// go to no session yet, or to the one the panel is leaving, and vanish from view.
+let picking = null;
+
+function pick(choose) {
+  const run = choose().finally(() => {
+    if (picking === run) picking = null;
+  });
+  picking = run;
+  return run;
+}
+
+async function send(message) {
+  while (picking) await picking.catch(() => {});
+  if (!sessionId) await showTabSession(); // the lookup on open failed; the message still needs a session
   if (!port) connect();
   port.postMessage(message);
 }
@@ -292,17 +307,21 @@ async function activeTabId() {
   return tab?.id;
 }
 
-async function showTabSession(tabId) {
-  const lookup = ++tabLookups;
-  const id = await request('tab-session', { tabId: tabId ?? (await activeTabId()) });
-  if (lookup === tabLookups) await openSession(id); // a later tab switch wins
+function showTabSession(tabId) {
+  return pick(async () => {
+    const lookup = ++tabLookups;
+    const id = await request('tab-session', { tabId: tabId ?? (await activeTabId()) });
+    if (lookup === tabLookups) await openSession(id); // a later tab switch wins
+  });
 }
 
 /** A session picked by the user (from the list, or a new one) becomes the current tab's. */
-async function chooseSession(id) {
-  tabLookups += 1; // a tab lookup still in flight must not replace the user's pick
-  await request('bind-tab', { tabId: await activeTabId(), sessionId: id });
-  await openSession(id);
+function chooseSession(id) {
+  return pick(async () => {
+    tabLookups += 1; // a tab lookup still in flight must not replace the user's pick
+    await request('bind-tab', { tabId: await activeTabId(), sessionId: id });
+    await openSession(id);
+  });
 }
 
 async function openSession(id) {
@@ -1097,5 +1116,5 @@ function showSettingsError(message) {
   $('settingsError').scrollIntoView({ block: 'nearest' });
 }
 
-startSessions().catch((err) => showSettingsError(err.message));
+pick(startSessions).catch((err) => showSettingsError(err.message));
 init().catch((err) => showSettingsError(err.message));
