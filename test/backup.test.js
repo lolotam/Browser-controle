@@ -37,7 +37,7 @@ test('a backup without a ChatGPT sign-in restores the settings only', async () =
 });
 
 test('files that are not backups, or come from a newer format, are refused', async () => {
-  await assert.rejects(importBackup({ tokens: {} }), /not a Browser Agent backup/);
+  await assert.rejects(importBackup({ tokens: {} }), /not a Postora Browser Agent backup/);
   await assert.rejects(importBackup({ format: 'browser-agent-backup', version: 99, settings: {} }), /newer version/);
   assert.deepEqual(store, {});
 });

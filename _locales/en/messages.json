@@ -1,5 +1,5 @@
 {
-  "extName": { "message": "Browser Agent" },
-  "extDescription": { "message": "AI agent that drives your browser: search, click, type, collect information and report back. Works with a ChatGPT subscription, xAI Grok, Z.ai GLM or any OpenAI-compatible API." },
-  "actionTitle": { "message": "Open Browser Agent" }
+  "extName": { "message": "Postora Browser Agent" },
+  "extDescription": { "message": "AI agent that works in your browser: it searches, clicks, types and collects information, then reports back. Use any AI provider." },
+  "actionTitle": { "message": "Open Postora Browser Agent" }
 }

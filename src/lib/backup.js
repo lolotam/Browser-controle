@@ -15,8 +15,8 @@ export async function exportBackup() {
 
 /** Restores a file from exportBackup; returns the restored settings. */
 export async function importBackup(data) {
-  if (data?.format !== FORMAT) throw new Error('This file is not a Browser Agent backup.');
-  if (!(data.version <= VERSION)) throw new Error(`This backup was made by a newer version of Browser Agent (format ${data.version}).`);
+  if (data?.format !== FORMAT) throw new Error('This file is not a Postora Browser Agent backup.');
+  if (!(data.version <= VERSION)) throw new Error(`This backup was made by a newer version of Postora Browser Agent (format ${data.version}).`);
   const values = { settings: mergeSettings(data.settings ?? {}) };
   if (data.chatgptAuth) values.chatgptAuth = data.chatgptAuth;
   await chrome.storage.local.set(values);

@@ -33,7 +33,7 @@ const MODIFIERS = { Alt: 1, Control: 2, Ctrl: 2, Meta: 4, Cmd: 4, Shift: 8 };
  * never brought to the front; input and screenshots go through CDP.
  */
 export class BrowserController {
-  constructor({ title = 'Browser Agent', color = 'cyan', isTakenByOther = () => null } = {}) {
+  constructor({ title = 'Postora', color = 'cyan', isTakenByOther = () => null } = {}) {
     this.title = title;
     this.color = color;
     this.isTakenByOther = isTakenByOther;

@@ -2,7 +2,7 @@ const REPLY_LANGUAGE_NAMES = { ar: 'Arabic', en: 'English' };
 
 export function buildSystemPrompt({ vision, allowJavascript, replyLanguage }) {
   const now = new Date();
-  return `You are Browser Agent, an autonomous assistant that operates the user's real Chrome browser to complete tasks: searching, navigating, clicking, filling forms, and collecting information.
+  return `You are Postora Browser Agent, an autonomous assistant that operates the user's real Chrome browser to complete tasks: searching, navigating, clicking, filling forms, and collecting information.
 
 Today is ${now.toDateString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).
 

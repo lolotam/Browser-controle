@@ -35,7 +35,7 @@ There is nothing to build. The folder that contains `manifest.json` (the repo ro
 1. Open `chrome://extensions`.
 2. Turn on **Developer mode** (top-right switch).
 3. Click **Load unpacked** and select the repo folder (the one with `manifest.json`).
-4. "Browser Agent" appears in the list. Click the puzzle icon in the toolbar and **pin** it.
+4. "Postora Browser Agent" appears in the list. Click the puzzle icon in the toolbar and **pin** it.
 5. Click the icon (or press **Alt+Shift+A**). The side panel opens on **Settings** because no model is chosen yet.
 
 When you pull new code later, return to `chrome://extensions` and click the **reload ↻** button on the extension card.
@@ -114,7 +114,7 @@ Leave **⚡ الطبقة السريعة** (fast layer) off for now. It needs a k
 
 What happens next:
 
-- Chrome shows a bar: **"Browser Agent started debugging this browser."** This is expected. Clicks and typing go through the DevTools protocol, so sites see real input. Clicking **Cancel** on that bar stops browser control.
+- Chrome shows a bar: **"Postora Browser Agent started debugging this browser."** This is expected. Clicks and typing go through the DevTools protocol, so sites see real input. Clicking **Cancel** on that bar stops browser control.
 - Each step appears as a line (`✓ 3. click "index":12`). The model's reasoning summary shows in grey.
 - Before paying, sending messages, deleting data or typing passwords, the agent **asks you**. Answer in the input box.
 - When the task is done, a green **التقرير النهائي** (Final report) card shows the results and sources.
@@ -134,7 +134,7 @@ What happens next:
 | Model list is empty | Press ↻. If it is still empty, type the model id manually. |
 | "Chrome does not allow extensions to control chrome://…" | Navigate the tab to a normal `https://` site first. |
 | Clicks land in the wrong place | Page zoom or layout shifted. The agent usually retries; you can tell it "take a screenshot first". |
-| Nothing happens / panel frozen | Open `chrome://extensions` → Browser Agent → **Inspect views: service worker** → Console, and read the error. Reload the extension. |
+| Nothing happens / panel frozen | Open `chrome://extensions` → Postora Browser Agent → **Inspect views: service worker** → Console, and read the error. Reload the extension. |
 
 Logging out: Settings → **تسجيل خروج** (Log out). This deletes the stored tokens.
 
