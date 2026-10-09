@@ -26,15 +26,44 @@ export function parseSseChunk(buffer) {
   return { events, rest };
 }
 
-/** Yields `{event, data}` objects from a fetch Response body. */
-export async function* readSse(response, signal) {
+// A model call that sends nothing for this long is treated as failed, so a hung
+// provider ends the step (or hands it to the backup) instead of stalling the task.
+// Generous on purpose: reasoning models can think for minutes before a token.
+export const MODEL_IDLE_MS = 180000;
+
+export class StalledError extends Error {
+  constructor(ms) {
+    super(`The model sent nothing for ${Math.round(ms / 1000)} s, so the request was stopped. Try again, pick a faster model or a lower reasoning effort, or turn on a backup provider.`);
+    this.name = 'StalledError';
+  }
+}
+
+/**
+ * fetch for a model request that gives up when the response headers take longer
+ * than `idleMs`. The caller's signal still stops it as before (AbortError).
+ */
+export async function fetchModel(url, init, idleMs = MODEL_IDLE_MS) {
+  const controller = new AbortController();
+  const outer = init.signal;
+  if (outer?.aborted) controller.abort(outer.reason);
+  outer?.addEventListener('abort', () => controller.abort(outer.reason), { once: true });
+  const timer = setTimeout(() => controller.abort(new StalledError(idleMs)), idleMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Yields `{event, data}` objects from a fetch Response body; stops after `idleMs` without data. */
+export async function* readSse(response, signal, { idleMs = MODEL_IDLE_MS } = {}) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   try {
     while (true) {
       if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-      const { value, done } = await reader.read();
+      const { value, done } = await readWithin(reader, idleMs);
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
       const { events, rest } = parseSseChunk(buffer);
@@ -47,4 +76,15 @@ export async function* readSse(response, signal) {
   } finally {
     reader.releaseLock();
   }
+}
+
+function readWithin(reader, ms) {
+  let timer;
+  const stalled = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new StalledError(ms)); // first: cancelling settles the pending read as done
+      reader.cancel().catch(() => {});
+    }, ms);
+  });
+  return Promise.race([reader.read(), stalled]).finally(() => clearTimeout(timer));
 }

@@ -4,6 +4,7 @@
 // Jev's, which is why gateway presets ask for a higher minimum probability.
 
 import { providerMessage } from '../lib/failure.js';
+import { requestJson } from '../lib/json.js';
 
 const REQUEST_TIMEOUT_MS = 15000;
 
@@ -15,12 +16,12 @@ export async function askChatJudge({ baseUrl, apiKey, model, state, questions, s
     credentials: 'omit',
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+    body: requestJson({
       model,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: judgeInstructions(questions) },
-        { role: 'user', content: JSON.stringify(state) },
+        { role: 'user', content: requestJson(state) },
       ],
     }),
   });
