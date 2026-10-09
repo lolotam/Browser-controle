@@ -8,7 +8,9 @@
     "test": "node --test \"test/**/*.test.js\"",
     "e2e": "node test/e2e/run-e2e.mjs",
     "package": "node scripts/package.mjs",
-    "store-screenshots": "node scripts/store-screenshots.mjs"
+    "store-screenshots": "node scripts/store-screenshots.mjs",
+    "showcase": "node showcase/run.mjs",
+    "showcase:preflight": "node showcase/run.mjs --preflight"
   },
   "devDependencies": {
     "playwright-core": "1.56.1"
