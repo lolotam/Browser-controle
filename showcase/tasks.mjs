@@ -18,7 +18,8 @@ export const TASKS = [
     startUrl: 'https://books.toscrape.com/',
     task: 'On this site, find the 3 cheapest books in the Travel category. Report their titles and prices in a table.',
     check: (r) => grade(r, [
-      ['The Road to Little Dribbling £23.21', /Little Dribbling[\s\S]{0,200}23\.21|23\.21[\s\S]{0,200}Little Dribbling/i],
+      // The site's list shortens this title to "The Road to Little ...".
+      ['The Road to Little Dribbling £23.21', /Road to Little[\s\S]{0,200}23\.21|23\.21[\s\S]{0,200}Road to Little/i],
       ['1,000 Places to See £26.08', /1,?000 Places[\s\S]{0,200}26\.08|26\.08[\s\S]{0,200}1,?000 Places/i],
       ['The Great Railway Bazaar £30.54', /Railway Bazaar[\s\S]{0,200}30\.54|30\.54[\s\S]{0,200}Railway Bazaar/i],
     ]),

@@ -133,7 +133,7 @@ function settingsFor(model) {
   const preset = COMPATIBLE_PRESETS[model.preset];
   return {
     provider: 'compatible',
-    compatible: { preset: model.preset, baseUrl: model.baseUrl ?? preset.baseUrl, apiKey: env[model.env], model: model.model, effort: '' },
+    compatible: { preset: model.preset, baseUrl: model.baseUrl ?? preset.baseUrl, apiKey: env[model.env], model: model.model, effort: model.effort ?? '' },
     fallback: { enabled: false },
     fast: args.jev
       ? { enabled: true, mode: 'auto', provider: JEV.provider, baseUrl: JEV.baseUrl, apiKey: env[JEV.env], model: JEV.model, minProb: 0.6, riskyMax: 0.3, decision: true, fallback: { enabled: false } }
