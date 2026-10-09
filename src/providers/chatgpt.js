@@ -128,7 +128,7 @@ export class ChatgptSession {
         : [{ type: 'message', role: 'developer', content: [{ type: 'input_text', text: this.systemPrompt }] }, ...this.input],
       tools: this.tools.map((t) => ({ type: 'function', name: t.name, description: t.description, parameters: t.parameters, strict: false })),
       tool_choice: toolChoice,
-      parallel_tool_calls: false,
+      parallel_tool_calls: true, // a form's fields and its submit can come in one turn
       reasoning: this.effort ? { effort: this.effort, summary: 'auto' } : { summary: 'auto' },
       store: false,
       stream: true,

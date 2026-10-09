@@ -179,6 +179,29 @@ export function pageText(start, length) {
   return { total: text.length, start, text: text.slice(start, start + length) };
 }
 
+/**
+ * Resolves once the page's content has not changed for `quietMs`, or after `maxMs`
+ * at most. Attribute changes (animations, hover styles) do not count, so busy pages
+ * end at the cap rather than never.
+ */
+export function domSettled(quietMs, maxMs) {
+  return new Promise((resolve) => {
+    let timer = setTimeout(done, quietMs);
+    const cap = setTimeout(done, maxMs);
+    const observer = new MutationObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(done, quietMs);
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    function done() {
+      observer.disconnect();
+      clearTimeout(timer);
+      clearTimeout(cap);
+      resolve(true);
+    }
+  });
+}
+
 export function pageReadyState() {
   return { readyState: document.readyState, url: location.href };
 }

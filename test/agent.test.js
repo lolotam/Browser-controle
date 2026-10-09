@@ -109,3 +109,47 @@ test('renderMarkdown renders tables, lists and headings', () => {
   assert.match(html, /<ul><li>one<\/li><li>two<\/li><\/ul>/);
   assert.match(html, /<td>1<\/td><td>2<\/td>/);
 });
+
+test('a turn with several actions runs them in order and only the last observes the page', async () => {
+  const session = scriptedSession([
+    { text: '', toolCalls: [call('1', 'type_text', { index: 0, text: 'a' }), call('2', 'type_text', { index: 1, text: 'b' }), call('3', 'click', { index: 2 })] },
+    { text: '', toolCalls: [call('4', 'done', { report: 'ok', success: true })] },
+  ]);
+  const executed = [];
+  await runAgent({
+    session,
+    task: 't',
+    maxSteps: 5,
+    emit: () => {},
+    execute: async (name, args, opts) => {
+      executed.push([name, opts.observe]);
+      return { output: 'ok' };
+    },
+  });
+  assert.deepEqual(executed, [['type_text', false], ['type_text', false], ['click', true]]);
+  assert.deepEqual(session.results.map((r) => r.id), ['1', '2', '3', '4']);
+});
+
+test('a batch stops when an action changes the page or fails, and every call still gets a result', async () => {
+  for (const [first, reason] of [[{ output: 'moved', pageChanged: true }, /page changed/], [{ output: 'Error: x', isError: true }, /failed/]]) {
+    const session = scriptedSession([
+      { text: '', toolCalls: [call('1', 'click', { index: 0 }), call('2', 'type_text', { index: 1, text: 'b' }), call('3', 'done', { report: 'r' })] },
+      { text: '', toolCalls: [call('4', 'done', { report: 'ok', success: true })] },
+    ]);
+    const executed = [];
+    await runAgent({
+      session,
+      task: 't',
+      maxSteps: 5,
+      emit: () => {},
+      execute: async (name) => {
+        executed.push(name);
+        return first;
+      },
+    });
+    assert.deepEqual(executed, ['click']);
+    assert.deepEqual(session.results.map((r) => r.id), ['1', '2', '3', '4']);
+    assert.match(session.results[1].output, reason);
+    assert.match(session.results[2].output, reason);
+  }
+});

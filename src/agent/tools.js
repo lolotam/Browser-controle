@@ -54,7 +54,15 @@ export function formatSnapshot(snap) {
 
 export function createToolExecutor(browser, { askUser, signal = null }) {
   const overlay = browser.overlay;
+  // Set per call by execute: inside a batch, an action that left the page where it
+  // was skips the snapshot (the batch's last action reports the page state).
+  let call = { brief: false, url: null, pageChanged: false };
   const observe = async (prefix) => {
+    if (call.brief) {
+      const url = (await browser.currentTab().catch(() => null))?.url ?? null;
+      if (url === call.url) return `${prefix} (Page state follows the last action of this turn.)`;
+      call.pageChanged = true;
+    }
     try {
       return `${prefix}\n\n${formatSnapshot(await browser.snapshot())}`;
     } catch (err) {
@@ -164,12 +172,16 @@ export function createToolExecutor(browser, { askUser, signal = null }) {
     ask_user: async ({ question }) => `User answered: ${await askUser(question)}`,
   };
 
-  return async function execute(name, args) {
+  /** `observe: false` marks an action that is not the last of its turn's batch. */
+  return async function execute(name, args, { observe: full = true } = {}) {
     const handler = handlers[name];
     if (!handler) return { output: `Unknown tool "${name}".`, isError: true };
+    const brief = !full && name !== 'read_page';
+    call = { brief, url: brief ? (await browser.currentTab().catch(() => null))?.url ?? null : null, pageChanged: false };
     try {
       const result = await handler(args ?? {});
-      return typeof result === 'string' ? { output: result } : result;
+      const out = typeof result === 'string' ? { output: result } : result;
+      return call.pageChanged ? { ...out, pageChanged: true } : out;
     } catch (err) {
       return { output: `Error: ${err.message}`, isError: true };
     }

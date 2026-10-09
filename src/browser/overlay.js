@@ -271,7 +271,7 @@ export function overlayCommand(cmd) {
       return true;
     }
     if (ui.x === null) place(fx, fy);
-    const duration = Math.min(550, Math.max(300, 200 + dist * 0.35));
+    const duration = Math.min(320, Math.max(160, 120 + dist * 0.2));
     // A gentle arc, like a hand moving a mouse, rather than a straight slide.
     const bend = Math.min(80, dist * 0.18);
     const cx = (fx + x) / 2 - ((y - fy) / dist) * bend;

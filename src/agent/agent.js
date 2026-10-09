@@ -5,6 +5,8 @@
 
 import { escalationMessage } from '../fast/fast-layer.js';
 
+const SKIPPED_PAGE_CHANGED = 'Not executed: the page changed after an earlier action in this turn. Decide again from the new page state.';
+const SKIPPED_AFTER_ERROR = 'Not executed: an earlier action in this turn failed. Decide again.';
 const SUMMARY_PROMPT = 'You have reached the step limit. Stop using tools and write the final report now: what was done, all information collected with sources, and what remains.';
 
 export async function runAgent({ session, execute, task, maxSteps, signal, emit, fastLayer = null }) {
@@ -57,12 +59,20 @@ export async function runAgent({ session, execute, task, maxSteps, signal, emit,
           emit({ type: 'final', report: call.args.report ?? '', success: call.args.success !== false });
           return;
         }
+        // Several actions in one turn: only the last returns the page state, which
+        // saves a full page snapshot per action; an earlier one reports it only if
+        // the page changed, and then the rest of the batch is not run.
+        const last = !pending.some((c) => c.name !== 'done');
         emit({ type: 'tool-start', step, name: call.name, args: call.args });
-        const result = await execute(call.name, call.args);
+        const result = await execute(call.name, call.args, { observe: last });
         emit({ type: 'tool-end', step, name: call.name, ok: !result.isError, summary: firstLine(result.output) });
         session.addToolResult(call.id, result.output, result.images ?? []);
         fast?.recordLlmAction(call.name, call.args);
         llmHasSeenPage = true;
+        if (!last && (result.pageChanged || result.isError)) {
+          const reason = result.isError ? SKIPPED_AFTER_ERROR : SKIPPED_PAGE_CHANGED;
+          for (const skipped of pending.splice(0)) session.addToolResult(skipped.id, reason);
+        }
       }
     } finally {
       for (const call of pending) session.addToolResult(call.id, 'Not executed: the run ended before this call.');
