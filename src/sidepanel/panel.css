@@ -125,6 +125,17 @@ body { position: relative; }
 
 /* Feedback box and the rating card after a task. */
 .feedback-menu { gap: 8px; }
+.account-menu { gap: 10px; }
+.account-menu p { margin: 0 0 8px; font-size: 12.5px; }
+.account-menu .row { gap: 10px; align-items: center; }
+.account-who { display: flex; flex-direction: column; min-width: 0; }
+.account-who small { overflow: hidden; text-overflow: ellipsis; }
+#accountSignedIn { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+#accountSignedIn[hidden] { display: none; }
+.drive { display: flex; flex-direction: column; gap: 4px; padding-block: 6px; border-block: 1px solid var(--border); width: 100%; }
+.drive .row { gap: 4px; }
+.avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; }
+.avatar.large { width: 36px; height: 36px; }
 .feedback-menu textarea, .rate-card textarea { resize: vertical; }
 /* Stars always count 1→5 left to right, but sit at the start of the line in either direction. */
 .stars { display: flex; gap: 2px; direction: ltr; align-self: flex-start; }

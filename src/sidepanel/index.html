@@ -19,6 +19,10 @@
     </div>
     <span class="chip" id="modelChip" dir="ltr">—</span>
     <div class="actions">
+      <button type="button" class="ghost icon account-btn" id="accountBtn" aria-haspopup="dialog" data-i18n-title="account.open">
+        <img class="avatar" id="accountAvatar" alt="" referrerpolicy="no-referrer" hidden />
+        <svg id="accountIcon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6" /></svg>
+      </button>
       <button type="button" class="ghost lang" id="langBtn" data-i18n="lang.switchLabel" data-i18n-title="lang.switchTitle">ع</button>
       <button type="button" class="ghost icon" id="feedbackBtn" aria-haspopup="dialog" data-i18n-title="feedback.open">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z" /><path d="M8 9h8M8 12h5" /></svg>
@@ -34,6 +38,31 @@
   <div id="sessionMenu" class="session-menu" hidden>
     <input id="sessionSearch" type="search" autocomplete="off" data-i18n-placeholder="session.search" />
     <ul id="sessionList" role="listbox"></ul>
+  </div>
+  <div id="accountMenu" class="session-menu account-menu" role="dialog" hidden>
+    <div id="accountSignedOut">
+      <p class="muted" data-i18n="account.why"></p>
+      <button type="button" class="primary" id="googleSignInBtn" data-i18n="account.signIn"></button>
+    </div>
+    <div id="accountSignedIn" hidden>
+      <div class="row">
+        <img class="avatar large" id="accountMenuAvatar" alt="" referrerpolicy="no-referrer" />
+        <div class="account-who">
+          <strong id="accountName" dir="auto"></strong>
+          <small class="muted" id="accountEmail" dir="ltr"></small>
+        </div>
+      </div>
+      <div class="drive">
+        <small class="muted" id="driveStatus" dir="auto"></small>
+        <div class="row">
+          <button type="button" class="ghost" id="driveBackupBtn" data-i18n="drive.backupNow"></button>
+          <button type="button" class="ghost" id="driveRestoreBtn" data-i18n="drive.restore"></button>
+        </div>
+        <small class="muted" data-i18n="drive.note"></small>
+      </div>
+      <button type="button" class="ghost" id="googleSignOutBtn" data-i18n="account.signOut"></button>
+    </div>
+    <small class="muted" id="accountStatus"></small>
   </div>
   <div id="feedbackMenu" class="session-menu feedback-menu" role="dialog" hidden>
     <strong data-i18n="feedback.title"></strong>
