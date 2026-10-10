@@ -23,7 +23,9 @@ const runDir = path.join(ROOT, 'showcase-results', runName);
 const webDir = path.join(runDir, 'web');
 fs.mkdirSync(webDir, { recursive: true });
 
-const meta = JSON.parse(fs.readFileSync(path.join(runDir, 'run.json'), 'utf8'));
+// manifest.json from runs that have one; run.json from runs recorded before manifests.
+const metaFile = ['manifest.json', 'run.json'].map((f) => path.join(runDir, f)).find((f) => fs.existsSync(f));
+const meta = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
 const TASK_LIST = meta.set === 'hard' ? HARD_TASKS : TASKS;
 const runs = [];
 for (const model of MODELS) {
@@ -65,6 +67,8 @@ const data = {
   jev: meta.jev ? `${meta.jev.model} via ${meta.jev.provider === 'vercel' ? 'Vercel AI Gateway' : meta.jev.provider}` : null,
   models: MODELS.filter((m) => runs.some((r) => r.model === m.id)).map(({ id, label }) => ({ id, label })),
   set: meta.set ?? 'basic',
+  commit: meta.commit ?? null,
+  manifest: meta.id ?? null,
   tasks: TASK_LIST.map(({ id, title, site, task }) => ({ id, title, site, task })),
   runs: runs.map((r) => ({ ...r, videos: Object.fromEntries(Object.entries(r.videos).map(([k, f]) => [k, assets[f] ? `/_blob/${assets[f]}` : null])) })),
 };
