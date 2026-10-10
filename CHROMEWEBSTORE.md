@@ -157,6 +157,7 @@ Paste each line into the matching field of the dashboard's Privacy tab.
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
 | 0.1.0 | 2026-10-09 | First store release | Draft |
+| 0.2.0 | 2026-10-11 | Retries on rate limits and overloads, page dates, text-written tool calls; session notebook and autocomplete picking; time and tokens per step; optional notifications; tested free setup; store build without the run-JavaScript tool | Draft |
 
 ## Review Notes
 
