@@ -3,12 +3,15 @@
 // their messages, so the status is read from the text. `code` lets the panel
 // translate the reason; `reason` is the English fallback for "other".
 
+import { classify } from './retry.js';
+
 const MAX_REASON = 120;
 const REASONS = {
   quota: 'Usage limit or quota reached',
   auth: 'API key rejected or no access to this model',
   server: 'The provider’s server failed',
   network: 'No connection to the provider',
+  'rate-limit': 'Too many requests to the provider right now',
 };
 
 export function describeFailure(error) {
@@ -19,9 +22,9 @@ export function describeFailure(error) {
 }
 
 function codeFor(error, detail) {
+  const status = error?.status ?? Number(detail.match(/HTTP (\d{3})/)?.[1]);
+  if (status === 429) return classify(error?.status ? error : { status, detail }, { provider: /ChatGPT/.test(detail) ? 'chatgpt' : '' }) === 'exhausted' ? 'quota' : 'rate-limit';
   if (/usage limit|quota|insufficient.*(credit|balance)/i.test(detail)) return 'quota';
-  const status = Number(detail.match(/HTTP (\d{3})/)?.[1]);
-  if (status === 429) return 'quota';
   if (status === 401 || status === 403) return 'auth';
   if (status >= 500) return 'server';
   if (error instanceof TypeError && /fetch|network/i.test(detail)) return 'network';

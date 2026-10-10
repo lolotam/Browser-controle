@@ -13,7 +13,7 @@ import * as store from '../sessions/store.js';
 
 const SAVE_DELAY_MS = 500;
 const KEEP_ALIVE_MS = 20000;
-const STREAMING = new Set(['text-delta', 'reasoning-delta']);
+const STREAMING = new Set(['text-delta', 'reasoning-delta', 'text-reset']);
 
 export class SessionRunner {
   constructor({ meta, body, color, isTakenByOther, onSessionsChanged }) {
@@ -68,7 +68,13 @@ export class SessionRunner {
     for (const port of this.ports) port.postMessage(event);
   }
 
-  notify = (notice) => this.emit({ type: 'notice', id: crypto.randomUUID(), ...notice });
+  /** Shows a notice and returns its id; `{ dismiss: id }` withdraws one (a retry that ended). */
+  notify = (notice) => {
+    if (notice.dismiss) return this.emit({ type: 'notice-dismissed', id: notice.dismiss });
+    const id = crypto.randomUUID();
+    this.emit({ type: 'notice', id, ...notice });
+    return id;
+  };
 
   async start(text) {
     if (this.running) {

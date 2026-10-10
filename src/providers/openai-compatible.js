@@ -2,8 +2,10 @@
 // OpenAI API keys, OpenRouter, or a local server.
 
 import { providerMessage } from '../lib/failure.js';
-import { fetchModel, readSse } from '../lib/sse.js';
+import { MODEL_IDLE_MS, fetchModel, readSse } from '../lib/sse.js';
 import { requestJson } from '../lib/json.js';
+import { ProviderHttpError, readError, withRetry } from '../lib/retry.js';
+import { parseTextToolCalls } from './text-tool-calls.js';
 
 const KEEP_FULL_OBSERVATIONS = 2;
 const TRIMMED_OBSERVATION_CHARS = 400;
@@ -35,9 +37,17 @@ function supportsTools(model) {
 // OpenCode (Zen and Go) routes and caches by a stable conversation id, and Go
 // rejects requests without one (HTTP 400 MissingSessionID).
 const OPENCODE = /^https:\/\/opencode\.ai\//;
+// A model without vision says so in one of these ways (OpenRouter, vLLM / NVIDIA, others).
+const NO_VISION = /image input|support(?:s)? images?|does not support vision|vision is not supported|multimodal processing is not enabled|does not support multimodal/i;
+const NO_VISION_STATUS = new Set([400, 404, 415, 422]);
+// finish_reason values that mean the answer is complete.
+const COMPLETE = new Set(['stop', 'tool_calls', 'function_call']);
 
 export class CompatibleSession {
-  constructor({ baseUrl, apiKey, model, effort, thinkingStyle, systemPrompt, tools, sessionId = crypto.randomUUID() }) {
+  constructor({ baseUrl, apiKey, model, effort, thinkingStyle, systemPrompt, tools, sessionId = crypto.randomUUID(), notify = null, textToolCalls = false }) {
+    this.notify = notify;
+    this.textToolCalls = textToolCalls; // only presets where models were seen writing calls as text
+    this.turn = 0;
     this.baseUrl = trimSlash(baseUrl);
     this.sessionId = sessionId;
     this.apiKey = apiKey;
@@ -58,7 +68,7 @@ export class CompatibleSession {
     this.pendingImages.push(...images);
   }
 
-  async next({ signal, onEvent = () => {}, toolChoice = 'auto' }) {
+  async next({ signal, onEvent = () => {}, toolChoice = 'auto' }, deadline = Date.now() + MODEL_IDLE_MS) {
     if (this.pendingImages.length) {
       this.messages.push(this.textOnly
         ? userMessage('A screenshot was taken, but this model cannot read images. Use read_page or get_text instead.')
@@ -67,35 +77,32 @@ export class CompatibleSession {
     }
     compactMessages(this.messages);
 
-    const res = await fetchModel(`${this.baseUrl}/chat/completions`, {
-      method: 'POST',
-      credentials: 'omit',
-      signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
-        ...(OPENCODE.test(this.baseUrl) ? { 'x-opencode-session': this.sessionId } : {}),
-      },
-      body: requestJson(this.requestBody(toolChoice)),
-    });
-    if (!res.ok) {
-      const detail = await res.text().catch(() => '');
-      // A model without vision: drop the screenshots and ask again, once; later
-      // screenshots become a short note (see above).
-      if (/image input|support(?:s)? images?|does not support vision|vision is not supported/i.test(detail) && dropImages(this.messages)) {
+    let res;
+    try {
+      res = await this.request(toolChoice, signal, deadline);
+    } catch (err) {
+      if (!(err instanceof ProviderHttpError)) throw err;
+      const { status, detail } = err;
+      // A model without vision: drop the screenshots and ask again within the same
+      // deadline, once (no images are left after that); later screenshots become a note.
+      if (NO_VISION_STATUS.has(status) && NO_VISION.test(detail) && dropImages(this.messages)) {
         this.textOnly = true;
-        return this.next({ signal, onEvent, toolChoice });
+        return this.next({ signal, onEvent, toolChoice }, deadline);
       }
       // OpenRouter's own advice for this one is to drop a tool, which the agent cannot do.
-      if (/support tool use/i.test(detail)) throw new Error(`Model request failed (HTTP ${res.status}): this model cannot call tools, which the agent needs to use the browser. Pick another model.`);
+      if (/support tool use/i.test(detail)) throw failure(err, 'this model cannot call tools, which the agent needs to use the browser. Pick another model.');
       // The provider has the model in its list but will not serve it to this account or plan.
-      if (/model is unavailable|model access is disabled/i.test(detail)) throw new Error(`Model request failed (HTTP ${res.status}): ${providerMessage(detail, 200)} This model is not available to your account or plan right now; pick another model in Settings.`);
-      throw new Error(`Model request failed (HTTP ${res.status}): ${providerMessage(detail, 400)}`);
+      if (/model is unavailable|model access is disabled/i.test(detail)) throw failure(err, `${providerMessage(detail, 200)} This model is not available to your account or plan right now; pick another model in Settings.`);
+      throw failure(err, providerMessage(detail, 400));
     }
 
     const acc = createAccumulator();
+    let done = false;
     for await (const { data } of readSse(res, signal)) {
-      if (data === '[DONE]') break;
+      if (data === '[DONE]') {
+        done = true;
+        break;
+      }
       const chunk = JSON.parse(data);
       if (chunk.error) throw new Error(chunk.error.message ?? JSON.stringify(chunk.error));
       const delta = acc.push(chunk);
@@ -104,12 +111,50 @@ export class CompatibleSession {
     }
 
     const result = acc.result();
+    // Neither a finish reason nor [DONE]: the connection dropped mid-answer.
+    if (!result.finishReason && !done) throw new Error('Model request failed: the response stream ended before the answer was complete.');
+    this.turn += 1;
+    const complete = COMPLETE.has(result.finishReason) || (done && !result.finishReason);
+    if (complete && !result.toolCalls.length && toolChoice !== 'none' && this.textToolCalls) {
+      const calls = parseTextToolCalls(result.text, this.tools);
+      if (calls) {
+        result.toolCalls = calls.map((c, n) => ({ id: `textcall_${this.turn}_${n}`, name: c.name, args: c.args }));
+        result.rawToolCalls = result.toolCalls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: JSON.stringify(c.args) } }));
+        result.text = '';
+        onEvent({ type: 'text-reset' }); // the streamed text was a call, not an answer
+      }
+    }
     this.messages.push({
       role: 'assistant',
       content: result.text || null,
       ...(result.rawToolCalls.length ? { tool_calls: result.rawToolCalls } : {}),
     });
     return { text: result.text, toolCalls: result.toolCalls, usage: result.usage };
+  }
+
+  /** The request up to its response headers, retried on rate limits and overloads. */
+  request(toolChoice, signal, deadline) {
+    return withRetry(async (remaining) => {
+      let res;
+      try {
+        res = await fetchModel(`${this.baseUrl}/chat/completions`, {
+          method: 'POST',
+          credentials: 'omit',
+          signal,
+          headers: {
+            'Content-Type': 'application/json',
+            ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
+            ...(OPENCODE.test(this.baseUrl) ? { 'x-opencode-session': this.sessionId } : {}),
+          },
+          body: requestJson(this.requestBody(toolChoice)),
+        }, remaining);
+      } catch (err) {
+        if (err instanceof TypeError) err.network = true; // fetch itself failed: no connection
+        throw err;
+      }
+      if (res.ok) return res;
+      throw new ProviderHttpError(await readError(res));
+    }, { signal, deadline, notify: this.notify });
   }
 
   requestBody(toolChoice) {
@@ -133,10 +178,12 @@ export class CompatibleSession {
 export function createAccumulator() {
   let text = '';
   let usage = null;
+  let finishReason = null;
   const calls = [];
   return {
     push(chunk) {
       if (chunk.usage) usage = chunk.usage;
+      if (chunk.choices?.[0]?.finish_reason) finishReason = chunk.choices[0].finish_reason;
       const delta = chunk.choices?.[0]?.delta ?? {};
       const out = { text: delta.content ?? '', reasoning: delta.reasoning_content ?? delta.reasoning ?? '' };
       text += out.text;
@@ -156,6 +203,7 @@ export function createAccumulator() {
       return {
         text,
         usage,
+        finishReason,
         rawToolCalls: present.map((c) => ({
           id: c.id,
           type: 'function',
@@ -209,6 +257,14 @@ function safeJson(text) {
   } catch {
     return { _raw: text };
   }
+}
+
+/** The error a task sees: the provider's status stays readable for failure reasons and retries. */
+function failure(err, message) {
+  const out = new Error(`Model request failed (HTTP ${err.status}): ${message}`);
+  out.status = err.status;
+  out.detail = err.detail;
+  return out;
 }
 
 function trimSlash(url) {
