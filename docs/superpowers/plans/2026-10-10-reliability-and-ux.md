@@ -256,3 +256,37 @@
   - The fallback-enabled evaluation is left as a later, separate run.
   - The independent ground-truth grading of live sites is out of scope: the report keeps completion, provider errors, stalls and time separate.
 - **Round 2:** see below.
+- **Round 2 (Codex gpt-6.1-sol, medium):** verdict "start P; fix the contracts below before A". 9 findings resolved, 11 partly. Revision 3 below is binding and overrides the tasks above where they differ.
+
+## Revision 3 (binding, after round 2)
+
+- **P1 — immutable run manifest:**
+  - The first run writes `manifest.json` (commit, dirty flag, task set, models, Jev, timeout, the settings template with every key redacted). It is never overwritten.
+  - A resume with a different commit or configuration is rejected unless `--out` names a new folder.
+  - Each `result.json` carries the manifest's id.
+  - The historical 2026-10-10 baseline is labelled "recorded before manifests".
+- **A1 — dates:**
+  - Each line is `<release/heading/link label> · <shown text> — <ISO>`; the label is the nearest heading or link within 4 ancestors, at most 80 characters.
+  - The ISO value must match `^\d{4}-\d{2}-\d{2}(T…)?` and be a real calendar date.
+  - Test three releases that all show "2 days ago".
+  - `get_text` keeps its offsets over `innerText`; the dates section is appended after the last page and is not counted in `total`.
+- **A3 — one deadline:**
+  - A request has one deadline: 180 s from its first attempt. Attempts, waits, the no-vision retry and error-body reads all draw from it.
+  - When it runs out, the error is `DeadlineError` (not `AbortError`), so `FallbackSession` switches.
+  - The budget for waits is the smaller of 30 s and what is left of the deadline.
+  - The 429 classifier prefers structured fields (`error.code`, `status`, Google `quotaId` containing `PerDay`) over keywords. The keyword list is limited to `per day|daily|billing|insufficient (credits|funds|balance)|payment required`.
+  - `describeFailure` gets a `rate-limit` code separate from `quota`, so a transient 429 is not shown as "quota reached".
+  - Tests: slow headers, a nested no-vision retry inside the deadline, deadline expiry handing over to the backup.
+- **A4 — text calls:**
+  - **Completion:** a turn counts as complete only with `finish_reason` `stop` or `tool_calls`, or `[DONE]` with no `finish_reason` at all. `length`, `content_filter` and anything else mean the text is not parsed.
+  - **Where it is on:** only for presets marked `textToolCalls: true` (initially `nvidia`, where it was reproduced).
+  - **Validation:** required fields, enums and types are checked; a duplicate call (same name and arguments) in one turn rejects the whole parse.
+- **B1 — notes in compaction:** `note` results (short) are never trimmed. Only the latest `read_notes` result is kept in full, and older ones are trimmed. The notebook section is attached only to the latest full observation, and older copies go with their observation's trim.
+- **B3 — finding the options:**
+  - The global "appeared after typing" fallback is removed.
+  - Options are tied to the field by `aria-controls`, `aria-owns` or `aria-activedescendant`, or by being inside the field's own widget root: the closest ancestor with `role=combobox`, or the closest ancestor that contains both the input and a `[role=listbox]`.
+  - Otherwise nothing is clicked, and the result names what was found.
+  - **Success check:** the field's value or the widget root's selected-value element (outside the listbox) shows the option. Text inside the open list does not count.
+- **C1 — time and attempts:** `attemptId` per request attempt. Model time, retry wait and waiting for the user are shown separately. Usage totals are labelled "partial" when any turn lacks usage.
+- **C2 — notification text:** generic text without the task-derived title ("Postora: a task finished" / "needs your answer" / "stopped with an error"). The click routing finds the session.
+- **D1 — what is stripped:** the prompt's `run_javascript` sentence is stripped as well. The package test asserts that the executable capability is gone (tool list, prompt, handler, `Runtime.evaluate`) and that no `run_javascript` literal is left in the packaged sources.
