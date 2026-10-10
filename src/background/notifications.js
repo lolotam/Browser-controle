@@ -8,8 +8,9 @@
 import { MESSAGES } from '../sidepanel/messages.js';
 import { resolveLanguage } from '../sidepanel/i18n.js';
 
-const ROUTES_KEY = 'notificationRoutes';
-const MAX_ROUTES = 50;
+// One storage key per notification: two sessions notifying at once never overwrite
+// each other's route, as a shared map read and written back could.
+const routeKey = (id) => `notificationRoute:${id}`;
 const TEXT = { finished: 'notify.finished', ask: 'notify.ask', failed: 'notify.failed' };
 
 /** Whether the user has the switch on and Chrome still grants the permission. */
@@ -80,19 +81,12 @@ async function userIsLookingAt(tabId) {
 }
 
 async function saveRoute(id, route) {
-  const routes = (await chrome.storage.session.get(ROUTES_KEY))[ROUTES_KEY] ?? {};
-  routes[id] = route;
-  const ids = Object.keys(routes);
-  for (const old of ids.slice(0, Math.max(0, ids.length - MAX_ROUTES))) delete routes[old];
-  await chrome.storage.session.set({ [ROUTES_KEY]: routes });
+  await chrome.storage.session.set({ [routeKey(id)]: route });
 }
 
 async function takeRoute(id) {
-  const routes = (await chrome.storage.session.get(ROUTES_KEY))[ROUTES_KEY] ?? {};
-  const route = routes[id] ?? null;
-  if (route) {
-    delete routes[id];
-    await chrome.storage.session.set({ [ROUTES_KEY]: routes });
-  }
+  const key = routeKey(id);
+  const route = (await chrome.storage.session.get(key))[key] ?? null;
+  if (route) await chrome.storage.session.remove(key);
   return route;
 }

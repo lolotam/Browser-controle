@@ -28,7 +28,11 @@ function resetChrome({ granted = true, focusedTab = 99, tabs = { 7: { id: 7, win
     storage: {
       session: {
         get: async (key) => (key in state.session ? { [key]: structuredClone(state.session[key]) } : {}),
-        set: async (obj) => Object.assign(state.session, structuredClone(obj)),
+        set: async (obj) => {
+          await new Promise((r) => setTimeout(r, 5)); // writes land later, as in Chrome
+          Object.assign(state.session, structuredClone(obj));
+        },
+        remove: async (key) => { delete state.session[key]; },
       },
     },
   };
@@ -88,7 +92,17 @@ test('a closed tab or a deleted session claims nothing', async () => {
 test('a dismissed notification forgets its route', async () => {
   const id = await notifyTransition({ kind: 'failed', sessionId: 's1', tabId: 7, settings: on });
   await forgetNotification(id);
-  assert.deepEqual(state.session.notificationRoutes, {});
+  assert.deepEqual(state.session, {});
+});
+
+test('two sessions notifying at once both keep their routes', async () => {
+  const [a, b] = await Promise.all([
+    notifyTransition({ kind: 'finished', sessionId: 'a', tabId: 7, settings: on }),
+    notifyTransition({ kind: 'ask', sessionId: 'b', tabId: 7, settings: on }),
+  ]);
+  const opened = [];
+  for (const id of [a, b]) await openFromNotification(id, { sessionExists: async () => true, bindTab: async (_tab, sessionId) => opened.push(sessionId) });
+  assert.deepEqual(opened, ['a', 'b']);
 });
 
 test('a failing notifications API never reaches the task', async () => {
