@@ -290,3 +290,4 @@
 - **C1 — time and attempts:** `attemptId` per request attempt. Model time, retry wait and waiting for the user are shown separately. Usage totals are labelled "partial" when any turn lacks usage.
 - **C2 — notification text:** generic text without the task-derived title ("Postora: a task finished" / "needs your answer" / "stopped with an error"). The click routing finds the session.
 - **D1 — what is stripped:** the prompt's `run_javascript` sentence is stripped as well. The package test asserts that the executable capability is gone (tool list, prompt, handler, `Runtime.evaluate`) and that no `run_javascript` literal is left in the packaged sources.
+- **A3 — ChatGPT plan limits (review of #17):** `ChatgptSession` maps every 429 to "usage limit reached for this plan". Unless the response carries `Retry-After` or a rate-limit (not usage-limit) code, a ChatGPT 429 is classified `exhausted`, so the backup takes over at once.
