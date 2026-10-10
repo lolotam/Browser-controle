@@ -43,7 +43,13 @@ test('store-strip markers remove their block; an unmatched marker stops the buil
   const { storeSource } = await import('../scripts/package.mjs');
   const text = 'a\n  // @store-strip-start\n  secret();\n  // @store-strip-end\nb\n';
   assert.equal(storeSource('src/x.js', text), 'a\nb\n');
-  assert.throws(() => storeSource('src/x.js', 'a\n// @store-strip-start\nb\n'), /unmatched/);
+  assert.throws(() => storeSource('src/x.js', 'a\n// @store-strip-start\nb\n'), /never closed/);
+  assert.throws(() => storeSource('src/x.js', 'a\n// @store-strip-end\nb\n'), /without a start/);
+  // Two blocks, the first missing its end: the code between them must not vanish quietly.
+  const lostEnd = 'a\n// @store-strip-start\nx();\nkeep();\n// @store-strip-start\ny();\n// @store-strip-end\nb\n';
+  assert.throws(() => storeSource('src/x.js', lostEnd), /inside the block opened at line 2/);
+  const twoBlocks = 'a\n// @store-strip-start\nx();\n// @store-strip-end\nkeep();\n// @store-strip-start\ny();\n// @store-strip-end\nb\n';
+  assert.equal(storeSource('src/x.js', twoBlocks), 'a\nkeep();\nb\n');
   assert.match(storeSource('src/lib/build.js', 'export const STORE_BUILD = false;\n'), /STORE_BUILD = true/);
 });
 

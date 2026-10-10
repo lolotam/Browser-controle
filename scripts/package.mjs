@@ -46,13 +46,37 @@ export function overlongDescriptions(root = ROOT) {
   });
 }
 
-const STRIP = /^[ \t]*\/\/ @store-strip-start[^\n]*\n[\s\S]*?^[ \t]*\/\/ @store-strip-end[^\n]*\n/gm;
+const MARKER = /^[ \t]*\/\/ @store-strip-(start|end)\b/;
 const BUILD_FLAG = 'export const STORE_BUILD = false;';
+
+/**
+ * Removes the lines from each start marker through its end marker. Read line by
+ * line, so a start inside a block, an end without a start, or a block left open
+ * stops the build instead of silently swallowing the code between two blocks.
+ */
+function stripMarked(name, text) {
+  const kept = [];
+  let open = 0; // line number of the open start marker, or 0
+  text.split('\n').forEach((line, i) => {
+    const marker = line.match(MARKER)?.[1];
+    if (marker === 'start') {
+      if (open) throw new Error(`${name}:${i + 1}: @store-strip-start inside the block opened at line ${open}`);
+      open = i + 1;
+    } else if (marker === 'end') {
+      if (!open) throw new Error(`${name}:${i + 1}: @store-strip-end without a start`);
+      open = 0;
+    } else if (!open) {
+      if (line.includes('@store-strip')) throw new Error(`${name}:${i + 1}: malformed @store-strip marker`);
+      kept.push(line);
+    }
+  });
+  if (open) throw new Error(`${name}:${open}: @store-strip-start never closed`);
+  return kept.join('\n');
+}
 
 /** A source file as it ships in the store build. */
 export function storeSource(name, text) {
-  let out = text.replace(STRIP, '');
-  if (/@store-strip-(start|end)/.test(out)) throw new Error(`${name}: unmatched @store-strip marker`);
+  let out = stripMarked(name, text);
   if (name === 'src/lib/build.js') {
     if (!out.includes(BUILD_FLAG)) throw new Error(`${name}: "${BUILD_FLAG}" not found`);
     out = out.replace(BUILD_FLAG, 'export const STORE_BUILD = true;');
