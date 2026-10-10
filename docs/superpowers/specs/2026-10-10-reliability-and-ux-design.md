@@ -3,6 +3,18 @@
 **Date:** 2026-10-10 · **Status:** approved by the owner, to be debated (Codex) before implementation
 **Plan:** `docs/superpowers/plans/2026-10-10-reliability-and-ux.md`
 
+> **Revision 2 (after debate round 1 with Codex):** where this design and the plan differ, the plan's revision 2 is authoritative. Main changes:
+> - **Dates (§4.2):** a "Dates on this page" section from `datetime` attributes replaces the general shadow-DOM text walker.
+> - **No vision (§4.3):** explicit phrases only, gated on status and on images being present.
+> - **Retries (§4.4):** main and backup providers only, with a total 30 s budget. Classes are transient, exhausted and fatal. A `Retry-After` longer than the budget hands over to the backup.
+> - **Text tool calls (§4.1):** only when the whole answer is call blocks; schema-typed arguments; a completed stream is required.
+> - **Notes (§4.5):** the notebook is owned by the `SessionRunner` and saved with the session. Tool kinds drive batching and compaction.
+> - **Autocomplete (§4.6):** options come from the listbox tied to the field; exactly one exact match is clicked; no blind Enter; the value is checked after the click.
+> - **Notifications (§4.8):** generic translated text; routing kept in session storage; top-level listeners.
+> - **Time and tokens (§4.9):** call, turn and model identities; cost deferred.
+> - **Store build (§4.10):** effective-capability enforcement plus strip markers in the ZIP. The rationale is corrected: the Debugger API has a policy exception, so the removal lowers a risk rather than guaranteeing approval.
+> - **New prerequisite:** the hard set is merged and runs are reproducible.
+
 ## 1. Problem
 
 The showcase harness (`showcase/`, `npm run showcase`) ran the extension on two fixed task sets with six free models and Jev as the fast layer.
