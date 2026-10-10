@@ -165,7 +165,7 @@ const passed = (r) => Boolean(r?.grade?.pass);
 // Header facts
 const startedAt = new Date(DATA.started);
 $('eyebrow').textContent = `Browser agent benchmark · ${startedAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`;
-for (const f of [`${DATA.runs.length} runs`, `${DATA.tasks.length} tasks`, `${DATA.models.length} free models`, `Fast layer: ${DATA.jev}`, 'Live cursor on, screenshots allowed, 30-step cap']) $('facts').append(el('span', { cls: 'fact', text: f }));
+for (const f of [`${DATA.runs.length} runs`, `${DATA.tasks.length} tasks`, `${DATA.models.length} free models`, DATA.jev ? `Fast layer: ${DATA.jev}` : 'No fast layer', 'Live cursor on, screenshots allowed, 30-step cap']) $('facts').append(el('span', { cls: 'fact', text: f }));
 
 // Leaderboard
 const board = DATA.models.map((m) => {
@@ -210,7 +210,8 @@ function drawChart() {
   const labelW = W < 560 ? 110 : 190;
   const rowH = 30, top = 8, bottom = 30;
   const H = top + DATA.tasks.length * rowH + bottom;
-  const maxMs = Math.max(60000, ...DATA.runs.map((r) => r.ms || 0));
+  const plotted = (r) => r.ms != null && r.status !== 'error' && r.status !== 'stalled';
+  const maxMs = Math.max(60000, ...DATA.runs.filter(plotted).map((r) => r.ms));
   const step = maxMs > 240000 ? 60000 : maxMs > 120000 ? 30000 : 15000;
   const xMax = Math.ceil(maxMs / step) * step;
   const x = (ms) => labelW + ((W - labelW - 12) * ms) / xMax;
@@ -324,7 +325,7 @@ if (firstRun) select(firstRun.model, firstRun.task, false);
 // Method notes
 for (const n of [
   'Each run starts a fresh Chromium profile with the unpacked extension, opens the task’s start page, sends the task from the side panel and waits up to 6 minutes for the final report.',
-  `The fast layer is Jev (${DATA.jev}) in auto mode for every model; it runs obvious steps itself and hands the rest to the main model.`,
+  DATA.jev ? `The fast layer is Jev (${DATA.jev}) in auto mode for every model; it runs obvious steps itself and hands the rest to the main model.` : 'The fast layer was off: the main model took every step.',
   'A run passes when its final report contains every fact the task’s check requires. Live values (news, exchange rates, releases) are checked by shape rather than by value.',
   'Times include page loads, the fast layer and the live cursor’s movement, so they are what a user would wait.',
   'Left out after a connection check: OpenCode Zen’s free models (only usable inside the OpenCode app), Gemma 4 on OpenRouter (rate-limited), Inkling small (agent harnesses only) and Gemini 3.8 Flash (overloaded).',

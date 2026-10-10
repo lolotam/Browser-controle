@@ -8,12 +8,12 @@
 // Without assets.json the page still renders; videos show as "not uploaded".
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { TASKS } from './tasks.mjs';
-import { JEV, MODELS } from './models.mjs';
+import { MODELS } from './models.mjs';
+import { findFfmpeg } from './ffmpeg.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const [runName, ...flags] = process.argv.slice(2);
@@ -59,7 +59,8 @@ const assets = fs.existsSync(path.join(runDir, 'assets.json')) ? JSON.parse(fs.r
 const meta = JSON.parse(fs.readFileSync(path.join(runDir, 'run.json'), 'utf8'));
 const data = {
   started: meta.started,
-  jev: `${JEV.model} via Vercel AI Gateway`,
+  // What this run really used (null for --no-jev), not today's settings.
+  jev: meta.jev ? `${meta.jev.model} via ${meta.jev.provider === 'vercel' ? 'Vercel AI Gateway' : meta.jev.provider}` : null,
   models: MODELS.filter((m) => runs.some((r) => r.model === m.id)).map(({ id, label }) => ({ id, label })),
   tasks: TASKS.map(({ id, title, site, task }) => ({ id, title, site, task })),
   runs: runs.map((r) => ({ ...r, videos: Object.fromEntries(Object.entries(r.videos).map(([k, f]) => [k, assets[f] ? `/_blob/${assets[f]}` : null])) })),
@@ -73,9 +74,6 @@ console.log(`${runs.length} runs · ${files.length} videos (${mb.toFixed(1)} MB)
 
 /** Re-encodes with Playwright's own ffmpeg (VP8 only): narrower and at a lower bitrate. */
 function compress(src, out, width, rate) {
-  const base = process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(os.homedir(), 'AppData', 'Local', 'ms-playwright');
-  const dir = fs.readdirSync(base).find((d) => d.startsWith('ffmpeg-'));
-  const exe = path.join(base, dir, fs.readdirSync(path.join(base, dir)).find((f) => f.startsWith('ffmpeg')));
-  const res = spawnSync(exe, ['-loglevel', 'error', '-i', src, '-an', '-vf', `scale=${width}:-2`, '-c:v', 'vp8', '-b:v', rate, '-deadline', 'good', '-cpu-used', '4', '-y', out]);
+  const res = spawnSync(findFfmpeg(), ['-loglevel', 'error', '-i', src, '-an', '-vf', `scale=${width}:-2`, '-c:v', 'vp8', '-b:v', rate, '-deadline', 'good', '-cpu-used', '4', '-y', out]);
   if (res.status !== 0) console.warn(`compress failed for ${src}: ${String(res.stderr).slice(0, 200)}`);
 }

@@ -20,6 +20,7 @@ import { chromium } from 'playwright-core';
 import { TASKS } from './tasks.mjs';
 import { ENV_FILE, ENV_TEMPLATE, JEV, MODELS } from './models.mjs';
 import { COMPATIBLE_PRESETS } from '../src/lib/settings.js';
+import { findFfmpeg } from './ffmpeg.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PANEL_FPS = 2;
@@ -46,7 +47,9 @@ if (args.preflight) {
   for (const model of models) {
     for (const task of tasks) {
       const dir = path.join(outDir, model.id, task.id);
-      if (!args.force && fs.existsSync(path.join(dir, 'result.json'))) continue;
+      // A finished outcome is kept; a crash (browser, network, recorder) is tried again.
+      const previous = path.join(dir, 'result.json');
+      if (!args.force && fs.existsSync(previous) && JSON.parse(fs.readFileSync(previous, 'utf8')).status !== 'crashed') continue;
       process.stdout.write(`${model.id} · ${task.id} … `);
       const result = await runOne(model, task, dir).catch((err) => ({ status: 'crashed', error: err.message }));
       fs.mkdirSync(dir, { recursive: true });
@@ -203,13 +206,6 @@ function panelRecorder(panel, out) {
   };
 }
 
-function findFfmpeg() {
-  const base = process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(os.homedir(), 'AppData', 'Local', 'ms-playwright');
-  const dir = fs.readdirSync(base).find((d) => d.startsWith('ffmpeg-'));
-  if (!dir) throw new Error('Playwright ffmpeg not found: run "npx playwright-core install ffmpeg".');
-  const exe = fs.readdirSync(path.join(base, dir)).find((f) => f.startsWith('ffmpeg'));
-  return path.join(base, dir, exe);
-}
 
 async function preflight() {
   const { testProviderSlot } = await import('../src/agent/model-session.js');

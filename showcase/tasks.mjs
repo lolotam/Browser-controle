@@ -4,7 +4,20 @@
 // Expected values were read from the sites on 2026-10-09; the live ones (news,
 // rates, releases) are checked by shape, not value.
 
-const has = (report, re) => re.test(report);
+// A check is a regular expression, or a function of the report for what one cannot say.
+const has = (report, test) => (typeof test === 'function' ? test(report) : test.test(report));
+const MONTH = '(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.?';
+const DATE = new RegExp(`20\\d\\d-\\d\\d-\\d\\d|${MONTH}\\s+\\d{1,2},?\\s+20\\d\\d|\\d{1,2}\\s+${MONTH}\\s+20\\d\\d`, 'i');
+
+/** Five Hacker News stories with their points: "123 points", or a table whose Points column holds numbers. */
+function fivePointCounts(report) {
+  if ((report.match(/\b\d{1,5}\s*(?:points?|pts)\b/gi) ?? []).length >= 5) return true;
+  const lines = report.split('\n').filter((l) => l.trim().startsWith('|'));
+  const header = lines.find((l) => /points?|pts/i.test(l));
+  if (!header) return false;
+  const column = header.split('|').findIndex((cell) => /points?|pts/i.test(cell));
+  return lines.filter((l) => /^\s*\d[\d,]*\s*$/.test(l.split('|')[column] ?? '')).length >= 5;
+}
 const grade = (report, checks) => {
   const missing = checks.filter(([, re]) => !has(report, re)).map(([what]) => what);
   return { pass: missing.length === 0, score: (checks.length - missing.length) / checks.length, notes: missing.length ? `missing: ${missing.join(', ')}` : 'all facts present' };
@@ -44,7 +57,7 @@ export const TASKS = [
     startUrl: 'https://news.ycombinator.com/',
     task: 'Report the top 5 stories on the Hacker News front page right now, with their titles and points, in a table.',
     check: (r) => grade(r, [
-      ['five rows with points', /(?:\d+\s*points?[\s\S]*?){5}|(?:\|[^\n]*\d+[^\n]*\|\s*\n[\s\S]*?){5}/i],
+      ['five stories with their points', fivePointCounts],
     ]),
   },
   {
@@ -69,6 +82,7 @@ export const TASKS = [
       ['original height ≈146 m', /14[56](?:[.,]\d+)?/],
       ['current height ≈138 m', /13[7-9](?:[.,]\d+)?/],
       ['built ≈2560 BC', /25[5-9]\d|26\d\d/],
+      ['Arabic Wikipedia link', /ar\.wikipedia\.org/i],
       ['answer in Arabic', /(?:[؀-ۿ][^؀-ۿ]{0,3}){40,}/],
     ]),
   },
@@ -93,7 +107,8 @@ export const TASKS = [
     check: (r) => grade(r, [
       ['name echoed', /Postora Agent/],
       ['email echoed', /agent@example\.com/],
-      ['address echoed', /Nile Street/i],
+      ['current address echoed', /Nile Street/i],
+      ['permanent address echoed', /Tahrir Square/i],
     ]),
   },
   {
@@ -105,6 +120,7 @@ export const TASKS = [
     check: (r) => grade(r, [
       ['star count', /\d[\d.,]*\s*k?\s*(?:stars?|⭐)|stars?[^\n]{0,20}\d/i],
       ['release version v1.x', /v?1\.\d{2,}(?:\.\d+)?/],
+      ['release date', DATE],
     ]),
   },
   {
@@ -127,7 +143,7 @@ export const TASKS = [
     startUrl: 'https://www.python.org/',
     task: 'What is the latest Python 3 release, when was it released, and what was the release before it?',
     check: (r) => grade(r, [
-      ['a 3.x.y version', /3\.1\d\.\d+/],
+      ['the latest and the previous 3.x.y', (r) => new Set(r.match(/3\.1\d\.\d+/g) ?? []).size >= 2],
       ['a release date', /20[2-3]\d/],
     ]),
   },
