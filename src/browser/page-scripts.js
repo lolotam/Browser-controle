@@ -108,8 +108,12 @@ export function snapshotPage(maxElements, maxTextChars) {
       if (lines.length >= 40) break;
       const iso = (el.getAttribute('datetime') || '').trim();
       const parsed = ISO.test(iso) ? new Date(iso.replace(' ', 'T').replace(/ ?UTC$/, 'Z')) : null; // GitHub also writes '2026-09-04 22:12:00 UTC'
-      // A real calendar date: V8 rolls 2026-02-30 over to March instead of failing.
-      if (!parsed || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== new Date(`${iso.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10)) continue;
+      // A real calendar date as written: V8 rolls 2026-02-30 over to March instead of
+      // failing. The written day is checked, not the instant's UTC day, which differs
+      // near midnight for offsets such as 2026-10-10T00:30:00+02:00.
+      const [year, month, day] = iso.slice(0, 10).split('-').map(Number);
+      const written = new Date(Date.UTC(year, month - 1, day));
+      if (!parsed || Number.isNaN(parsed.getTime()) || written.getUTCMonth() !== month - 1 || written.getUTCDate() !== day) continue;
       const shown = squash(el.innerText || (el.shadowRoot && el.shadowRoot.textContent), 40);
       // The heading just above a date names what it dates (a release, a post); headings
       // after it belong to the body. Only what is on screen: a hidden menu's heading names nothing.
@@ -225,8 +229,12 @@ export function pageText(start, length) {
       if (lines.length >= 40) break;
       const iso = (el.getAttribute('datetime') || '').trim();
       const parsed = ISO.test(iso) ? new Date(iso.replace(' ', 'T').replace(/ ?UTC$/, 'Z')) : null; // GitHub also writes '2026-09-04 22:12:00 UTC'
-      // A real calendar date: V8 rolls 2026-02-30 over to March instead of failing.
-      if (!parsed || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== new Date(`${iso.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10)) continue;
+      // A real calendar date as written: V8 rolls 2026-02-30 over to March instead of
+      // failing. The written day is checked, not the instant's UTC day, which differs
+      // near midnight for offsets such as 2026-10-10T00:30:00+02:00.
+      const [year, month, day] = iso.slice(0, 10).split('-').map(Number);
+      const written = new Date(Date.UTC(year, month - 1, day));
+      if (!parsed || Number.isNaN(parsed.getTime()) || written.getUTCMonth() !== month - 1 || written.getUTCDate() !== day) continue;
       const shown = squash(el.innerText || (el.shadowRoot && el.shadowRoot.textContent), 40);
       // The heading just above a date names what it dates (a release, a post); headings
       // after it belong to the body. Only what is on screen: a hidden menu's heading names nothing.

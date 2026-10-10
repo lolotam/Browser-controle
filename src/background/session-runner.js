@@ -68,7 +68,13 @@ export class SessionRunner {
     for (const port of this.ports) port.postMessage(event);
   }
 
-  notify = (notice) => this.emit({ type: 'notice', id: crypto.randomUUID(), ...notice });
+  /** Shows a notice and returns its id; `{ dismiss: id }` withdraws one (a retry that ended). */
+  notify = (notice) => {
+    if (notice.dismiss) return this.emit({ type: 'notice-dismissed', id: notice.dismiss });
+    const id = crypto.randomUUID();
+    this.emit({ type: 'notice', id, ...notice });
+    return id;
+  };
 
   async start(text) {
     if (this.running) {

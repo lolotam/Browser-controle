@@ -74,10 +74,22 @@ test('Stop during a wait rejects at once with AbortError', async () => {
 test('one notice, only for a wait the user would notice', async () => {
   const notices = [];
   let calls = 0;
-  await withRetry(async () => { calls += 1; if (calls < 3) throw http(429, 'slow down'); return 'ok'; }, { wait: noWait, random: () => 0.5, notify: (n) => notices.push(n) });
+  await withRetry(async () => { calls += 1; if (calls < 3) throw http(429, 'slow down'); return 'ok'; }, { wait: noWait, random: () => 0.5, notify: (n) => { if (!n.dismiss) notices.push(n); return 'id'; } });
   assert.equal(notices.length, 1);
   assert.equal(notices[0].kind, 'retrying');
   assert.equal(notices[0].code, 'rate-limit');
+});
+
+test('the "trying again" notice is withdrawn when the retries end, either way', async () => {
+  for (const succeed of [true, false]) {
+    const events = [];
+    const notify = (n) => { events.push(n); return n.dismiss ? undefined : 'notice-1'; };
+    let calls = 0;
+    const run = withRetry(async () => { calls += 1; if (!succeed || calls < 2) throw http(503, 'busy'); return 'ok'; }, { wait: noWait, random: () => 1, notify }); // first pause 2.4 s: noticed
+    if (succeed) assert.equal(await run, 'ok');
+    else await assert.rejects(run);
+    assert.deepEqual(events.map((e) => e.kind ?? `dismiss ${e.dismiss}`), ['retrying', 'dismiss notice-1']);
+  }
 });
 
 test('a provider request: the error body is read once, retries happen, the stream is never replayed', async () => {
