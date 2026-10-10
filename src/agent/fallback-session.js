@@ -28,6 +28,11 @@ export class FallbackSession {
     this.openCalls = new Map();
   }
 
+  /** Which model is answering now: the backup after a switch. */
+  get model() {
+    return (this.switched ? this.labels.backup : this.labels.primary) ?? '';
+  }
+
   addUserMessage(text, images = []) {
     if (this.log.task === null) this.log.task = text;
     else this.log.notes.push(text);

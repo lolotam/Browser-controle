@@ -45,8 +45,10 @@ const NO_VISION_STATUS = new Set([400, 404, 415, 422]);
 const COMPLETE = new Set(['stop', 'tool_calls', 'function_call']);
 
 export class CompatibleSession {
-  constructor({ baseUrl, apiKey, model, effort, thinkingStyle, systemPrompt, tools, sessionId = crypto.randomUUID(), notify = null, textToolCalls = false }) {
+  constructor({ baseUrl, apiKey, model, effort, thinkingStyle, systemPrompt, tools, sessionId = crypto.randomUUID(), notify = null, textToolCalls = false, usage = false }) {
     this.notify = notify;
+    this.usage = usage; // ask for token usage in the stream (presets known to accept it)
+    this.retryWaitMs = 0;
     this.textToolCalls = textToolCalls; // only presets where models were seen writing calls as text
     this.turn = 0;
     this.baseUrl = trimSlash(baseUrl);
@@ -69,7 +71,7 @@ export class CompatibleSession {
     this.pendingImages.push(...images);
   }
 
-  async next({ signal, onEvent = () => {}, toolChoice = 'auto' }, deadline = Date.now() + MODEL_IDLE_MS) {
+  async next({ signal, onEvent = () => {}, toolChoice = 'auto' }, deadline = Date.now() + MODEL_IDLE_MS, retrying = false) {
     if (this.pendingImages.length) {
       this.messages.push(this.textOnly
         ? userMessage('A screenshot was taken, but this model cannot read images. Use read_page or get_text instead.')
@@ -77,6 +79,7 @@ export class CompatibleSession {
       this.pendingImages = [];
     }
     compactMessages(this.messages);
+    if (!retrying) this.retryWaitMs = 0;
 
     let res;
     try {
@@ -88,7 +91,12 @@ export class CompatibleSession {
       // deadline, once (no images are left after that); later screenshots become a note.
       if (NO_VISION_STATUS.has(status) && NO_VISION.test(detail) && dropImages(this.messages)) {
         this.textOnly = true;
-        return this.next({ signal, onEvent, toolChoice }, deadline);
+        return this.next({ signal, onEvent, toolChoice }, deadline, true);
+      }
+      // An endpoint that refuses the usage option: ask again without it, once.
+      if (status === 400 && this.usage && /stream_options/i.test(detail)) {
+        this.usage = false;
+        return this.next({ signal, onEvent, toolChoice }, deadline, true);
       }
       // OpenRouter's own advice for this one is to drop a tool, which the agent cannot do.
       if (/support tool use/i.test(detail)) throw failure(err, 'this model cannot call tools, which the agent needs to use the browser. Pick another model.');
@@ -130,7 +138,7 @@ export class CompatibleSession {
       content: result.text || null,
       ...(result.rawToolCalls.length ? { tool_calls: result.rawToolCalls } : {}),
     });
-    return { text: result.text, toolCalls: result.toolCalls, usage: result.usage };
+    return { text: result.text, toolCalls: result.toolCalls, usage: result.usage, retryWaitMs: this.retryWaitMs };
   }
 
   /** The request up to its response headers, retried on rate limits and overloads. */
@@ -155,7 +163,7 @@ export class CompatibleSession {
       }
       if (res.ok) return res;
       throw new ProviderHttpError(await readError(res));
-    }, { signal, deadline, notify: this.notify });
+    }, { signal, deadline, notify: this.notify, onWait: (ms) => { this.retryWaitMs += ms; } });
   }
 
   requestBody(toolChoice) {
@@ -165,6 +173,7 @@ export class CompatibleSession {
       tools: this.tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } })),
       tool_choice: toolChoice,
       stream: true,
+      ...(this.usage ? { stream_options: { include_usage: true } } : {}),
     };
     if (this.thinkingStyle === 'glm') {
       if (this.effort) body.thinking = { type: this.effort === 'off' ? 'disabled' : 'enabled' };

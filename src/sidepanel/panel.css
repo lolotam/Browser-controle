@@ -195,6 +195,10 @@ main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 /* \FE0E asks for the text glyph, so the bolt takes the accent color instead of an emoji. */
 .step.fast .mark::before { content: '\26A1\FE0E\00A0'; }
 .step.handoff { color: var(--muted); }
+.step .time { margin-left: auto; flex: none; color: var(--muted); padding-left: 6px; }
+.step.turn .mark { color: var(--muted); }
+.step.turn .name { color: var(--muted); flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.totals { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11px; }
 
 #composer { padding: 8px 10px 10px; }
 .composer-box {

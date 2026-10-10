@@ -64,6 +64,7 @@ export class SessionRunner {
 
   emit(event) {
     if (!STREAMING.has(event.type)) {
+      event.at ??= Date.now(); // the panel shows durations from these
       this.transcript.push(event);
       this.scheduleSave();
     }
