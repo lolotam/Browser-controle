@@ -10,6 +10,8 @@ const MAX_ATTEMPTS = 3;
 const MAX_WAIT_MS = 30000;
 const BACKOFF_MS = [2000, 6000];
 const ERROR_BODY_BYTES = 4096;
+// An error body that trickles in must not hold up the retry or the backup.
+const ERROR_READ_MS = 10000;
 // A notice only when the user would notice the pause.
 const NOTICE_AFTER_MS = 2000;
 
@@ -32,10 +34,38 @@ export class DeadlineError extends Error {
   }
 }
 
-/** Reads an error response once: status, body (capped) and Retry-After in ms. */
-export async function readError(res) {
-  const text = await res.text().catch(() => '');
-  return { status: res.status, detail: text.slice(0, ERROR_BODY_BYTES), retryAfterMs: retryAfterMs(res.headers?.get?.('retry-after')) };
+/**
+ * Reads an error response once: status, the first 4 KB of the body, and Retry-After
+ * in ms. The read stops at 4 KB or after `timeoutMs`, and the rest is cancelled.
+ */
+export async function readError(res, timeoutMs = ERROR_READ_MS) {
+  return { status: res.status, detail: await readPrefix(res, Math.min(timeoutMs, ERROR_READ_MS)), retryAfterMs: retryAfterMs(res.headers?.get?.('retry-after')) };
+}
+
+async function readPrefix(res, timeoutMs) {
+  const reader = res.body?.getReader?.();
+  if (!reader) return '';
+  const chunks = [];
+  let size = 0;
+  let timer;
+  const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve({ done: true }), Math.max(0, timeoutMs)); });
+  try {
+    while (size < ERROR_BODY_BYTES) {
+      const { done, value } = await Promise.race([reader.read(), timeout]);
+      if (done || !value) break;
+      chunks.push(value);
+      size += value.length;
+    }
+  } catch {
+    // A broken body leaves what arrived so far.
+  } finally {
+    clearTimeout(timer);
+    reader.cancel().catch(() => {});
+  }
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) { bytes.set(c, at); at += c.length; }
+  return new TextDecoder().decode(bytes.subarray(0, ERROR_BODY_BYTES));
 }
 
 export function retryAfterMs(value, now = Date.now()) {
@@ -99,6 +129,7 @@ export async function withRetry(attempt, { signal, deadline = Date.now() + MODEL
 }
 
 async function retryLoop(attempt, { signal, deadline, provider, wait, random, onWait, onPause }) {
+  let waited = 0; // MAX_WAIT_MS is the budget for all pauses of one request together
   for (let n = 1; ; n += 1) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new DeadlineError(MODEL_IDLE_MS);
@@ -110,7 +141,8 @@ async function retryLoop(attempt, { signal, deadline, provider, wait, random, on
       const jitter = 0.8 + random() * 0.4;
       const pause = err.retryAfterMs ?? Math.round(BACKOFF_MS[Math.min(n - 1, BACKOFF_MS.length - 1)] * jitter);
       // A provider asking for longer than we can wait: hand over now instead of retrying early.
-      if (pause > Math.min(MAX_WAIT_MS, deadline - Date.now())) throw err;
+      if (pause > Math.min(MAX_WAIT_MS - waited, deadline - Date.now())) throw err;
+      waited += pause;
       if (pause > NOTICE_AFTER_MS) onPause(err);
       onWait?.(pause); // shown apart from the model's own time
       await wait(pause, signal);
