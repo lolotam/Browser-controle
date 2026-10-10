@@ -116,3 +116,29 @@ test('vLLM "multimodal processing is not enabled" drops screenshots once; other 
     globalThis.fetch = original;
   }
 });
+
+test('the same vLLM refusal sent inside an HTTP 200 stream also drops screenshots once', async () => {
+  const original = globalThis.fetch;
+  try {
+    const bodies = [];
+    const refusal = { error: { message: 'ValueError: Received multimodal data but multimodal processing is not enabled. Use --enable-multimodal flag to enable multimodal processing.' } };
+    globalThis.fetch = async (_u, init) => {
+      bodies.push(init.body);
+      return init.body.includes('image_url') ? stream(refusal) : stream({ choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] });
+    };
+    const s = session();
+    s.addUserMessage('x');
+    s.addToolResult('c1', 'Screenshot attached', ['data:image/png;base64,AAAA']);
+    assert.equal((await s.next({})).text, 'OK');
+    assert.equal(bodies.length, 2);
+    assert.equal(s.textOnly, true);
+    // Any other error in the stream still fails the turn.
+    globalThis.fetch = async () => stream({ error: { message: 'upstream exploded' } });
+    const other = session();
+    other.addUserMessage('x');
+    other.addToolResult('c1', 'Screenshot attached', ['data:image/png;base64,AAAA']);
+    await assert.rejects(other.next({}), /upstream exploded/);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

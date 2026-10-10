@@ -114,7 +114,18 @@ export class CompatibleSession {
         break;
       }
       const chunk = JSON.parse(data);
-      if (chunk.error) throw new Error(chunk.error.message ?? JSON.stringify(chunk.error));
+      if (chunk.error) {
+        const message = chunk.error.message ?? JSON.stringify(chunk.error);
+        // vLLM answers HTTP 200 and reports a model without vision inside the stream
+        // ("multimodal processing is not enabled"): handled like the HTTP error, once,
+        // when nothing of the answer has arrived yet.
+        const nothingYet = !acc.result().text && !acc.result().toolCalls.length;
+        if (nothingYet && NO_VISION.test(message) && dropImages(this.messages)) {
+          this.textOnly = true;
+          return this.next({ signal, onEvent, toolChoice }, deadline, true);
+        }
+        throw new Error(message);
+      }
       const delta = acc.push(chunk);
       if (delta.text) onEvent({ type: 'text-delta', delta: delta.text });
       if (delta.reasoning) onEvent({ type: 'reasoning-delta', delta: delta.reasoning });
