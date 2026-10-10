@@ -109,3 +109,25 @@ test('a backup provider or a reopened session gets the notebook in its handoff',
   assert.match(handoffMessage(log, 'quota', book), /A Time of Torment £48\.35 \(from https:\/\/books\.test\/mystery\/page-1\)/);
   assert.doesNotMatch(handoffMessage(log, 'quota', new Notebook()), /Your notes/);
 });
+
+test('old note calls keep only a marker once a later observation shows the notebook', () => {
+  const header = new Notebook();
+  header.add('first', 'https://a.test');
+  const call = (id, name, args) => ({ role: 'assistant', content: null, tool_calls: [{ id, type: 'function', function: { name, arguments: JSON.stringify(args) } }] });
+  const long = { text: 'Item '.repeat(200) };
+  const messages = [
+    call('n1', 'note', long), { role: 'tool', tool_call_id: 'n1', content: 'Saved (1 note).' },
+    call('p1', 'read_page', {}), { role: 'tool', tool_call_id: 'p1', content: `Page state:\n...\n\n${header.format()}` },
+    call('n2', 'note', long), { role: 'tool', tool_call_id: 'n2', content: 'Saved (2 notes).' },
+  ];
+  compactMessages(messages);
+  assert.equal(messages[0].tool_calls[0].function.arguments, '{"text":"[saved to the notebook]"}');
+  assert.equal(messages[4].tool_calls[0].function.arguments, JSON.stringify(long)); // not shown in any notebook copy yet
+
+  const input = [
+    { type: 'function_call', call_id: 'n1', name: 'note', arguments: JSON.stringify(long) }, { type: 'function_call_output', call_id: 'n1', output: 'Saved (1 note).' },
+    { type: 'function_call', call_id: 'p1', name: 'read_page', arguments: '{}' }, { type: 'function_call_output', call_id: 'p1', output: header.format() },
+  ];
+  compactInput(input);
+  assert.equal(input[0].arguments, '{"text":"[saved to the notebook]"}');
+});

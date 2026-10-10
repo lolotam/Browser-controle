@@ -240,12 +240,13 @@ export function suggestionAction(index, wanted, mode) {
     (el.isContentEditable || el.matches('textarea, select, [role=combobox]') ||
       (el.tagName === 'INPUT' && !/^(hidden|submit|button|reset|image|checkbox|radio)$/i.test(el.type)));
 
-  // The field's own widget: the widest ancestor (up to 6 levels) holding no other field.
-  let widget = null;
+  // Ancestors (up to 6 levels) that hold no other field: the field's own widget.
+  const own = [];
   for (let p = field.parentElement, depth = 0; p && p !== document.body && depth < 6; p = p.parentElement, depth += 1) {
     if ([...p.querySelectorAll('input, textarea, select, [role=combobox], [contenteditable]')].some(isOtherField)) break;
-    widget = p;
+    own.push(p);
   }
+  const widget = own.at(-1) ?? null; // the widest, where a chosen value shows
 
   const containers = [];
   const named = (el) => {
@@ -265,24 +266,35 @@ export function suggestionAction(index, wanted, mode) {
     named(combo);
     containers.push(combo);
   }
-  if (widget) containers.push(widget);
 
-  const seen = new Set();
-  const options = [];
-  for (const c of containers) {
-    let found = [...(c.matches('[role=option]') ? [c] : []), ...c.querySelectorAll('[role=option]')];
-    if (!found.length) found = [...c.querySelectorAll('[id*="-option-"]')]; // react-select before v5 marks options only by id
-    for (const o of found) {
-      if (seen.has(o) || !visible(o) || o.matches('[aria-disabled=true], [disabled]')) continue;
-      seen.add(o);
-      options.push(o);
+  const optionsIn = (list) => {
+    const seen = new Set();
+    const found = [];
+    for (const c of list) {
+      let candidates = [...(c.matches('[role=option]') ? [c] : []), ...c.querySelectorAll('[role=option]')];
+      if (!candidates.length) candidates = [...c.querySelectorAll('[id*="-option-"]')]; // react-select before v5 marks options only by id
+      for (const o of candidates) {
+        if (seen.has(o) || !visible(o) || o.matches('[aria-disabled=true], [disabled]')) continue;
+        seen.add(o);
+        found.push(o);
+      }
+    }
+    return found;
+  };
+  // A list the field names is the only one used. Without one, the closest ancestor
+  // of the field's own widget that shows options, so an unrelated list stays out.
+  let options = optionsIn(containers);
+  if (!containers.length) {
+    for (const p of own) {
+      options = optionsIn([p]);
+      if (options.length) break;
     }
   }
   const label = (o) => (o.innerText || o.textContent || '').replace(/\s+/g, ' ').trim();
   const matches = options.filter((o) => norm(label(o)) === target);
 
   if (mode === 'scan') {
-    return { tied: containers.length > 0, total: options.length, options: options.slice(0, 10).map(label), matches: matches.length };
+    return { tied: containers.length > 0 || own.length > 0, total: options.length, options: options.slice(0, 10).map(label), matches: matches.length };
   }
   if (mode === 'locate') {
     if (matches.length !== 1) return { error: `The list changed: ${matches.length} options now read "${wanted}". Nothing was clicked.` };

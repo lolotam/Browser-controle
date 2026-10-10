@@ -35,12 +35,14 @@ const PAGE = `<!doctype html><html><body>
 
 // Two suggestion widgets on one page. Subject: chips, its list inside the widget and
 // left open after a choice (so the City step must not use it). City: a combobox whose
-// list is a portal at the end of <body>, filled 700 ms after typing.
+// list is a portal at the end of <body>, filled 700 ms after typing; a "Recent" list
+// beside the field is not the one it names, so its "Pune" must never be clicked.
 const WIDGETS = `<!doctype html><html><body>
 <h1>Widgets</h1>
 <form onsubmit="return false">
 <div class="subject"><span id="chips"></span><input id="subject" placeholder="Subject" autocomplete="off"></div>
-<div class="city"><input id="city" role="combobox" aria-controls="city-list" aria-expanded="false" placeholder="City" autocomplete="off"></div>
+<div class="city"><input id="city" role="combobox" aria-controls="city-list" aria-expanded="false" placeholder="City" autocomplete="off">
+<div role="listbox" aria-label="Recent"><div role="option">Pune</div></div></div>
 <button id="go" onclick="document.getElementById('out').textContent = 'Result: ' + [...document.querySelectorAll('#chips span')].map((c) => c.textContent).join('+') + ' / ' + city.value">Go</button>
 </form>
 <div id="out"></div>
