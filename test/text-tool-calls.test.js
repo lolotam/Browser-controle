@@ -138,6 +138,14 @@ test('the same vLLM refusal sent inside an HTTP 200 stream also drops screenshot
     other.addUserMessage('x');
     other.addToolResult('c1', 'Screenshot attached', ['data:image/png;base64,AAAA']);
     await assert.rejects(other.next({}), /upstream exploded/);
+    // Reasoning already shown: no retry, so a second answer is never appended to it.
+    let calls = 0;
+    globalThis.fetch = async () => { calls += 1; return stream({ choices: [{ delta: { reasoning_content: 'Looking at the screenshot' } }] }, refusal); };
+    const shown = session();
+    shown.addUserMessage('x');
+    shown.addToolResult('c1', 'Screenshot attached', ['data:image/png;base64,AAAA']);
+    await assert.rejects(shown.next({}), /multimodal processing is not enabled/);
+    assert.equal(calls, 1);
   } finally {
     globalThis.fetch = original;
   }

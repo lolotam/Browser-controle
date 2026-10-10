@@ -108,6 +108,7 @@ export class CompatibleSession {
 
     const acc = createAccumulator();
     let done = false;
+    let received = false; // any part of the answer (text, reasoning or a call) arrived
     for await (const { data } of readSse(res, signal)) {
       if (data === '[DONE]') {
         done = true;
@@ -118,15 +119,15 @@ export class CompatibleSession {
         const message = chunk.error.message ?? JSON.stringify(chunk.error);
         // vLLM answers HTTP 200 and reports a model without vision inside the stream
         // ("multimodal processing is not enabled"): handled like the HTTP error, once,
-        // when nothing of the answer has arrived yet.
-        const nothingYet = !acc.result().text && !acc.result().toolCalls.length;
-        if (nothingYet && NO_VISION.test(message) && dropImages(this.messages)) {
+        // and only before anything was shown, so a retry never adds to a shown answer.
+        if (!received && NO_VISION.test(message) && dropImages(this.messages)) {
           this.textOnly = true;
           return this.next({ signal, onEvent, toolChoice }, deadline, true);
         }
         throw new Error(message);
       }
       const delta = acc.push(chunk);
+      if (delta.text || delta.reasoning || chunk.choices?.[0]?.delta?.tool_calls?.length) received = true;
       if (delta.text) onEvent({ type: 'text-delta', delta: delta.text });
       if (delta.reasoning) onEvent({ type: 'reasoning-delta', delta: delta.reasoning });
     }
