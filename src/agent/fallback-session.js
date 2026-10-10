@@ -55,7 +55,11 @@ export class FallbackSession {
       turn = await this.active.next(options);
     } catch (err) {
       if (err?.name === 'AbortError' || this.switched || !this.createBackup) throw err;
+      const primary = this.active;
       turn = await this.switchToBackup(err, options);
+      // The primary's pauses before it gave up count as retry waits, not model time.
+      const waited = (turn.retryWaitMs ?? 0) + (primary.retryWaitMs ?? 0);
+      if (waited) turn = { ...turn, retryWaitMs: waited };
     }
     for (const call of turn.toolCalls ?? []) this.openCalls.set(call.id, call);
     return turn;

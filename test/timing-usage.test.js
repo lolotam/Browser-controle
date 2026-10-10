@@ -92,3 +92,13 @@ test('retry pauses are reported so the panel can show them apart from model time
   }, { wait: async () => {}, random: () => 0.5, onWait: (ms) => waits.push(ms) });
   assert.deepEqual(waits, [2000, 6000]);
 });
+
+test('after a switch to the backup, the primary\'s retry pauses still count as waiting', async () => {
+  const { FallbackSession } = await import('../src/agent/fallback-session.js');
+  const primary = { retryWaitMs: 8000, addUserMessage() {}, addToolResult() {}, next: async () => { throw Object.assign(new Error('HTTP 503'), { status: 503 }); } };
+  const backup = { addUserMessage() {}, addToolResult() {}, next: async () => ({ text: 'ok', toolCalls: [], retryWaitMs: 2000 }) };
+  const session = new FallbackSession({ primary, createBackup: () => backup, labels: { primary: 'A', backup: 'B' } });
+  const turn = await session.next({});
+  assert.equal(turn.retryWaitMs, 10000);
+  assert.equal(session.model, 'B');
+});
