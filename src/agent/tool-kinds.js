@@ -26,7 +26,9 @@ export const TOOL_KINDS = {
   screenshot: 'reader',
   list_tabs: 'reader',
   close_tab: 'reader',
+  // @store-strip-start
   run_javascript: 'reader',
+  // @store-strip-end
   ask_user: 'boundary',
   choose_suggestion: 'boundary',
   note: 'bookkeeping',

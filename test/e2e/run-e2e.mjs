@@ -9,6 +9,7 @@
 //   npm install && npm run e2e
 //   CHROMIUM_PATH=/path/to/chrome npm run e2e   (if Playwright's browser is not installed)
 //   E2E_SCREENSHOTS=out E2E_COLOR_SCHEME=dark npm run e2e   (save the panel after each scenario for visual review)
+//   E2E_EXTENSION_DIR=<unpacked store zip> npm run e2e        (run the scenarios on the store build)
 
 import http from 'node:http';
 import path from 'node:path';
@@ -17,7 +18,8 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 
-const EXTENSION_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+// E2E_EXTENSION_DIR runs the same scenarios on another copy, such as the unpacked store build.
+const EXTENSION_DIR = process.env.E2E_EXTENSION_DIR || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 const PAGE = `<!doctype html><html><body>
 <h1>Agent test page</h1>

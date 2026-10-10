@@ -1,6 +1,9 @@
 // Builds the Chrome Web Store upload: dist/postora-browser-agent-v<version>.zip with only
 // what the extension runs (manifest, locales, icons, src). The manifest's "key"
-// is dropped, since the store assigns the extension's ID itself.
+// is dropped, since the store assigns the extension's ID itself. The store build
+// leaves out the run-JavaScript tool: src/lib/build.js says STORE_BUILD = true and
+// code between "// @store-strip-start" and "// @store-strip-end" is removed. All of
+// this happens on the copies going into the ZIP; the repository is never changed.
 //
 //   npm run package
 
@@ -40,6 +43,57 @@ export function overlongDescriptions(root = ROOT) {
     const messages = JSON.parse(fs.readFileSync(path.join(root, '_locales', lang, 'messages.json'), 'utf8'));
     const n = [...(messages.extDescription?.message ?? '')].length;
     return n > MAX_DESCRIPTION ? [`${lang}: ${n} chars`] : [];
+  });
+}
+
+// A marker is the whole line; anything else mentioning @store-strip is a typo.
+const MARKER = /^[ \t]*\/\/ @store-strip-(start|end)[ \t]*\r?$/;
+const BUILD_FLAG = 'export const STORE_BUILD = false;';
+
+/**
+ * Removes the lines from each start marker through its end marker. Read line by
+ * line, so a start inside a block, an end without a start, or a block left open
+ * stops the build instead of silently swallowing the code between two blocks.
+ */
+function stripMarked(name, text) {
+  const kept = [];
+  let open = 0; // line number of the open start marker, or 0
+  text.split('\n').forEach((line, i) => {
+    const marker = line.match(MARKER)?.[1];
+    if (marker === 'start') {
+      if (open) throw new Error(`${name}:${i + 1}: @store-strip-start inside the block opened at line ${open}`);
+      open = i + 1;
+    } else if (marker === 'end') {
+      if (!open) throw new Error(`${name}:${i + 1}: @store-strip-end without a start`);
+      open = 0;
+    } else if (line.includes('@store-strip')) {
+      // Inside a block too: a misspelled end must not let a later end decide what goes.
+      throw new Error(`${name}:${i + 1}: malformed @store-strip marker`);
+    } else if (!open) {
+      kept.push(line);
+    }
+  });
+  if (open) throw new Error(`${name}:${open}: @store-strip-start never closed`);
+  return kept.join('\n');
+}
+
+/** A source file as it ships in the store build. */
+export function storeSource(name, text) {
+  let out = stripMarked(name, text);
+  if (name === 'src/lib/build.js') {
+    if (!out.includes(BUILD_FLAG)) throw new Error(`${name}: "${BUILD_FLAG}" not found`);
+    out = out.replace(BUILD_FLAG, 'export const STORE_BUILD = true;');
+  }
+  return out;
+}
+
+/** Every file of the store build with the bytes it ships with. */
+export function packageEntries(root = ROOT) {
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  return packageFiles(root).map((name) => {
+    if (name === 'manifest.json') return { name, data: Buffer.from(`${JSON.stringify(storeManifest(manifest), null, 2)}\n`) };
+    const data = fs.readFileSync(path.join(root, name));
+    return { name, data: /\.(js|mjs|html)$/.test(name) ? Buffer.from(storeSource(name, data.toString('utf8'))) : data };
   });
 }
 
@@ -109,12 +163,7 @@ function main() {
   const overlong = overlongDescriptions();
   if (overlong.length) throw new Error(`Store descriptions must be ≤ ${MAX_DESCRIPTION} characters: ${overlong.join(', ')}`);
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
-  const entries = packageFiles().map((name) => ({
-    name,
-    data: name === 'manifest.json'
-      ? Buffer.from(`${JSON.stringify(storeManifest(manifest), null, 2)}\n`)
-      : fs.readFileSync(path.join(ROOT, name)),
-  }));
+  const entries = packageEntries();
   const out = path.join(ROOT, 'dist', `postora-browser-agent-v${manifest.version}.zip`);
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, zip(entries));

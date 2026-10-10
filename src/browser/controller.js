@@ -252,6 +252,7 @@ export class BrowserController {
     return { dataUrl: `data:image/jpeg;base64,${data}`, width: Math.round(vp.clientWidth), height: Math.round(vp.clientHeight) };
   }
 
+  // @store-strip-start
   async evaluate(expression) {
     const { result, exceptionDetails } = await this.cdp('Runtime.evaluate', {
       expression,
@@ -262,6 +263,7 @@ export class BrowserController {
     if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text);
     return result.value;
   }
+  // @store-strip-end
 
   /** Waits for any navigation the last action triggered to finish loading. */
   async waitForLoad({ expectNavigation = false, timeoutMs = 12000 } = {}) {
