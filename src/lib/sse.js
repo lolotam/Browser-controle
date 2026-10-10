@@ -55,19 +55,25 @@ export async function fetchModel(url, init, idleMs = MODEL_IDLE_MS) {
   }
 }
 
-/** Yields `{event, data}` objects from a fetch Response body; stops after `idleMs` without data. */
+/**
+ * Yields `{event, data}` objects from a fetch Response body; stops after `idleMs`
+ * without an event. Keep-alive comments (": ping") are not events, so a provider
+ * that only pings while the model is stuck still runs into the limit.
+ */
 export async function* readSse(response, signal, { idleMs = MODEL_IDLE_MS } = {}) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let deadline = Date.now() + idleMs;
   try {
     while (true) {
       if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-      const { value, done } = await readWithin(reader, idleMs);
+      const { value, done } = await readWithin(reader, Math.max(0, deadline - Date.now()), idleMs);
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
       const { events, rest } = parseSseChunk(buffer);
       buffer = rest;
+      if (events.length) deadline = Date.now() + idleMs;
       yield* events;
     }
     buffer += decoder.decode();
@@ -78,11 +84,12 @@ export async function* readSse(response, signal, { idleMs = MODEL_IDLE_MS } = {}
   }
 }
 
-function readWithin(reader, ms) {
+/** One read, given up after `ms`; `idleMs` is the limit named in the error. */
+function readWithin(reader, ms, idleMs) {
   let timer;
   const stalled = new Promise((_, reject) => {
     timer = setTimeout(() => {
-      reject(new StalledError(ms)); // first: cancelling settles the pending read as done
+      reject(new StalledError(idleMs)); // first: cancelling settles the pending read as done
       reader.cancel().catch(() => {});
     }, ms);
   });

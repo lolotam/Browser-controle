@@ -19,6 +19,23 @@ test('a stream that goes quiet is stopped with a clear error', async () => {
   }, (err) => err.name === 'StalledError' && /sent nothing/.test(err.message));
 });
 
+test('keep-alive pings do not reset the limit: only model data does', async () => {
+  const encoder = new TextEncoder();
+  let ping;
+  const pinging = new Response(new ReadableStream({
+    start(controller) {
+      ping = setInterval(() => controller.enqueue(encoder.encode(': ping\n\n')), 10);
+    },
+    cancel() { clearInterval(ping); },
+  }));
+  const started = Date.now();
+  await assert.rejects(async () => {
+    for await (const _ of readSse(pinging, null, { idleMs: 80 }));
+  }, { name: 'StalledError' });
+  clearInterval(ping);
+  assert.ok(Date.now() - started < 1000);
+});
+
 test('response headers that never come end the request; the caller can still stop it', async () => {
   const original = globalThis.fetch;
   globalThis.fetch = (_url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason)));
