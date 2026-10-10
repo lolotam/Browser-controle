@@ -87,7 +87,18 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
  * request up to its response headers only, so a started stream is never replayed.
  */
 export async function withRetry(attempt, { signal, deadline = Date.now() + MODEL_IDLE_MS, provider = '', notify = null, wait = sleep, random = Math.random } = {}) {
-  let notified = false;
+  let notice = null; // id of the "trying again" notice, withdrawn once the retries end
+  try {
+    return await retryLoop(attempt, { signal, deadline, provider, wait, random, onPause: (err) => {
+      if (notice !== null || !notify) return;
+      notice = notify({ level: 'warning', kind: 'retrying', code: err.status === 429 ? 'rate-limit' : 'server', reason: `HTTP ${err.status ?? 'network'}`, detail: String(err.detail ?? err.message ?? '').slice(0, 300) }) ?? false;
+    } });
+  } finally {
+    if (notice) notify({ dismiss: notice });
+  }
+}
+
+async function retryLoop(attempt, { signal, deadline, provider, wait, random, onPause }) {
   for (let n = 1; ; n += 1) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new DeadlineError(MODEL_IDLE_MS);
@@ -100,10 +111,7 @@ export async function withRetry(attempt, { signal, deadline = Date.now() + MODEL
       const pause = err.retryAfterMs ?? Math.round(BACKOFF_MS[Math.min(n - 1, BACKOFF_MS.length - 1)] * jitter);
       // A provider asking for longer than we can wait: hand over now instead of retrying early.
       if (pause > Math.min(MAX_WAIT_MS, deadline - Date.now())) throw err;
-      if (!notified && pause > NOTICE_AFTER_MS && notify) {
-        notified = true;
-        notify({ level: 'warning', kind: 'retrying', code: err.status === 429 ? 'rate-limit' : 'server', reason: `HTTP ${err.status ?? 'network'}`, detail: String(err.detail ?? err.message ?? '').slice(0, 300) });
-      }
+      if (pause > NOTICE_AFTER_MS) onPause(err);
       await wait(pause, signal);
     }
   }

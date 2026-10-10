@@ -28,6 +28,8 @@ const PAGE = `<!doctype html><html><body>
 <!-- Like GitHub releases: the shown date lives in a shadow root, and two releases read the same. -->
 <section><h2><a href="#r2">v9.1.0</a></h2><relative-time datetime="2026-10-08T10:00:00Z"></relative-time></section>
 <section><h2><a href="#r1">v9.0.0</a></h2><relative-time datetime="2026-10-08T09:00:00Z"></relative-time></section>
+<!-- Valid, though its UTC instant falls on the day before. -->
+<section><h2>v8.9.0</h2><time datetime="2026-10-10T00:30:00+02:00">Oct 10</time></section>
 <script>customElements.define('relative-time', class extends HTMLElement { connectedCallback() { if (!this.shadowRoot) this.attachShadow({ mode: 'open' }).textContent = '2 days ago'; } });</script>
 </body></html>`;
 
@@ -105,7 +107,8 @@ function scriptedLlm({ askFirst = false } = {}) {
     const lastUser = body.messages.at(-1);
     if (Array.isArray(lastUser.content) && lastUser.content.some((c) => c.type === 'image_url' && c.image_url.url.startsWith('data:image/jpeg'))) sawImage = true;
     // Both releases read "2 days ago": each date must come with its own release name.
-    if (/v9\.1\.0 · 2 days ago — 2026-10-08T10:00:00Z/.test(lastTool) && /v9\.0\.0 · 2 days ago — 2026-10-08T09:00:00Z/.test(lastTool)) sawDates = true;
+    if (/v9\.1\.0 · 2 days ago — 2026-10-08T10:00:00Z/.test(lastTool) && /v9\.0\.0 · 2 days ago — 2026-10-08T09:00:00Z/.test(lastTool)
+      && /v8\.9\.0 · Oct 10 — 2026-10-10T00:30:00\+02:00/.test(lastTool)) sawDates = true;
     return steps[Math.min(turn++, steps.length - 1)](lastTool);
   };
 }
