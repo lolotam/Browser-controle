@@ -65,6 +65,7 @@ export const DEFAULT_SETTINGS = {
   allowJavascript: false,
   // The agent's cursor, captions and Stop bar drawn on the page it controls.
   showCursor: true,
+  notify: false, // desktop notifications; also needs the optional permission
   uiLanguage: 'auto',
   // Off: the agent replies in the language the task is written in.
   replyLanguage: { enabled: false, language: '' },

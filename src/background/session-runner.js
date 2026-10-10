@@ -10,6 +10,7 @@ import { BrowserController } from '../browser/controller.js';
 import { Notebook } from '../agent/notebook.js';
 import { createFastLayer } from '../fast/fast-layer.js';
 import { loadSettings } from '../lib/settings.js';
+import { notifyTransition } from './notifications.js';
 import * as store from '../sessions/store.js';
 
 const SAVE_DELAY_MS = 500;
@@ -32,6 +33,9 @@ export class SessionRunner {
     this.pendingQuestion = null;
     this.saveTimer = null;
     this.disposed = false;
+    this.notified = new Set(); // transitions of the current task already notified
+    this.asks = 0;
+    this.settings = null;
     this.browser = new BrowserController({ title: meta.title || 'Postora', color, isTakenByOther: (tab) => isTakenByOther(this.id, tab) });
     this.browser.groupId = body.groupId ?? null;
   }
@@ -67,6 +71,8 @@ export class SessionRunner {
       event.at ??= Date.now(); // the panel shows durations from these
       this.transcript.push(event);
       this.scheduleSave();
+      if (event.type === 'final') this.transition('finished');
+      else if (event.type === 'ask') this.transition('ask', `ask-${(this.asks += 1)}`);
     }
     for (const port of this.ports) port.postMessage(event);
   }
@@ -88,12 +94,14 @@ export class SessionRunner {
     this.abort = abort;
     // Extension API calls reset the service worker idle timer while the model thinks.
     const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo(), KEEP_ALIVE_MS);
+    this.notified.clear();
     this.emit({ type: 'user', text });
     this.emit({ type: 'status', running: true });
     try {
       if (!this.titled) await this.nameAfter(text);
       this.onSessionsChanged(); // after naming, so other panels list it with its title
       const settings = await loadSettings();
+      this.settings = settings;
       this.prepareModelSession(settings);
       this.browser.overlay.begin({ enabled: settings.showCursor, uiLanguage: settings.uiLanguage });
       this.browser.tabId = null; // each task starts on the tab the user is looking at
@@ -113,6 +121,7 @@ export class SessionRunner {
       });
     } catch (err) {
       this.emit(err.name === 'AbortError' ? { type: 'stopped' } : { type: 'error', message: err.message });
+      if (err.name !== 'AbortError') this.transition('failed'); // stopped by the user: they know
     } finally {
       clearInterval(keepAlive);
       this.abort = null;
@@ -177,8 +186,16 @@ export class SessionRunner {
     const pending = this.pendingQuestion;
     if (!pending) return;
     this.pendingQuestion = null;
-    this.emit({ type: 'user', text });
+    this.emit({ type: 'user', text, answer: true });
     pending.resolve(text);
+  }
+
+  /** A desktop notification for a task transition, at most once each, if the user turned them on. */
+  async transition(kind, key = kind) {
+    if (this.notified.has(key)) return;
+    this.notified.add(key);
+    const settings = this.settings ?? (await loadSettings().catch(() => null));
+    await notifyTransition({ kind, sessionId: this.id, tabId: this.browser.tabId, settings });
   }
 
   scheduleSave() {

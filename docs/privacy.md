@@ -32,6 +32,10 @@ Signing in uses Google's standard sign-in page and asks for your basic profile (
 
 The backup is stored without extra encryption and is protected by your Google account. To delete it, open Google Drive → Settings → Manage apps → Postora Browser Agent → Delete hidden app data. To stop backups, sign out from the account menu.
 
+## Notifications (optional)
+
+If you turn on "Notify me" in Settings, Chrome asks you to allow notifications. The extension then shows a desktop notification when a task finishes, needs your answer or stops with an error, only while you are on another tab. The notification says only that ("A task finished"); it contains no task, page or report text, and nothing is sent anywhere. Turning the switch off gives the permission back.
+
 ## Feedback
 
 Feedback is sent only when you submit it. It contains your message, the rating, the extension version and interface language, and an email address: one you type in the feedback box, or your Google email if you are signed in. It does not contain page content, tasks or keys. It is delivered to the developer by Formspree ([privacy policy](https://formspree.io/legal/privacy-policy/)).

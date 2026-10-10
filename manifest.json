@@ -24,6 +24,9 @@
     "debugger",
     "declarativeNetRequestWithHostAccess"
   ],
+  "optional_permissions": [
+    "notifications"
+  ],
   "host_permissions": [
     "<all_urls>"
   ],

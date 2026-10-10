@@ -78,7 +78,7 @@ function onEvent(event) {
       break;
     case 'user':
       add('msg user', event.text);
-      ui.stats = newStats(event.at);
+      if (!event.answer) ui.stats = newStats(event.at); // an answer to ask_user is part of the task
       break;
     case 'turn-end':
       addTurn(event);
@@ -858,6 +858,10 @@ function fillForm() {
   $('vision').checked = settings.vision;
   $('allowJavascript').checked = settings.allowJavascript;
   $('showCursor').checked = settings.showCursor;
+  $('notify').checked = false;
+  $('notifyNote').hidden = true;
+  // On only while Chrome still grants the permission: it can be revoked outside the panel.
+  if (settings.notify) chrome.permissions.contains({ permissions: ['notifications'] }).then((granted) => { $('notify').checked = granted; });
   $('replyLangEnabled').checked = settings.replyLanguage.enabled;
   $('replyLang').value = settings.replyLanguage.language;
   syncReplyLanguage();
@@ -873,6 +877,7 @@ function readForm() {
   next.vision = $('vision').checked;
   next.allowJavascript = $('allowJavascript').checked;
   next.showCursor = $('showCursor').checked;
+  next.notify = $('notify').checked;
   next.replyLanguage = { enabled: $('replyLangEnabled').checked, language: $('replyLang').value };
   next.keys = keyStore.snapshot();
   return next;
@@ -884,6 +889,22 @@ function syncReplyLanguage() {
 }
 
 $('replyLangEnabled').addEventListener('change', syncReplyLanguage);
+
+// The permission is asked for from the click itself (Chrome needs the gesture), and
+// given back when the switch goes off. Notifications need both the switch and it.
+$('notify').addEventListener('change', async () => {
+  const box = $('notify');
+  $('notifyNote').hidden = true;
+  if (box.checked) {
+    const granted = await chrome.permissions.request({ permissions: ['notifications'] }).catch(() => false);
+    if (!granted) {
+      box.checked = false;
+      $('notifyNote').hidden = false;
+    }
+  } else {
+    await chrome.permissions.remove({ permissions: ['notifications'] }).catch(() => {});
+  }
+});
 
 function syncFallback() {
   $('fallbackProvider').hidden = !$('fallbackEnabled').checked;
