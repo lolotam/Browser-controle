@@ -19,6 +19,8 @@
 
 **Tech Stack:** Chrome MV3 extension, plain ES modules, `node --test`, Playwright e2e, showcase harness (`npm run showcase -- --set hard`).
 
+**Spec:** `docs/superpowers/specs/2026-10-10-reliability-and-ux-design.md`
+
 ## Global Constraints
 
 - Four PRs, in order: **A** reliability (Tasks 1–4), **B** agent tools (Tasks 5–6), **C** user experience (Tasks 7–9), **D** store build (Task 10). Each task ends with `npm test` green and a commit; each PR also runs `npm run e2e`.
@@ -148,11 +150,11 @@
 
 ## PR D: Chrome Web Store build
 
-### Task 10: Store build without the JavaScript tool (decision needed)
+### Task 10: Store build without the JavaScript tool
 
-**Decision:** keep `run_javascript` in the store build (answer "Yes" to remote code and justify it, risking rejection) **or** leave it out of the store build only (recommended: the store's remote-code rule covers code the model writes at run time, and the tool is off by default anyway).
+**Decision (owner, 2026-10-10):** leave `run_javascript` out of the store build only; the development build keeps it.
 
-**Files (if left out):** Modify `scripts/package.mjs`, `src/agent/tools.js`, `src/sidepanel/index.html`, `CHROMEWEBSTORE.md`; Test `test/package.test.js`
+**Files:** Modify `scripts/package.mjs`, `src/agent/tools.js`, `src/sidepanel/index.html`, `CHROMEWEBSTORE.md`; Test `test/package.test.js`
 
 - [ ] `package.mjs` writes `src/lib/build.js` with `export const STORE_BUILD = true` into the ZIP (the repository copy says `false`).
 - [ ] `toolDefinitions` drops `run_javascript` and the settings page hides its switch when `STORE_BUILD`.
@@ -169,7 +171,7 @@
 | A | 1–4 | 3–4 h | hard showcase rerun |
 | B | 5–6 | 4–5 h | hard showcase rerun |
 | C | 7–9 | 4–5 h | panel screenshots, e2e |
-| D | 10 | 1 h, after the decision | `npm run package` |
+| D | 10 | 1 h | `npm run package` |
 
 ## Risks
 
