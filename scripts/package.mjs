@@ -46,7 +46,8 @@ export function overlongDescriptions(root = ROOT) {
   });
 }
 
-const MARKER = /^[ \t]*\/\/ @store-strip-(start|end)\b/;
+// A marker is the whole line; anything else mentioning @store-strip is a typo.
+const MARKER = /^[ \t]*\/\/ @store-strip-(start|end)[ \t]*\r?$/;
 const BUILD_FLAG = 'export const STORE_BUILD = false;';
 
 /**
@@ -65,8 +66,10 @@ function stripMarked(name, text) {
     } else if (marker === 'end') {
       if (!open) throw new Error(`${name}:${i + 1}: @store-strip-end without a start`);
       open = 0;
+    } else if (line.includes('@store-strip')) {
+      // Inside a block too: a misspelled end must not let a later end decide what goes.
+      throw new Error(`${name}:${i + 1}: malformed @store-strip marker`);
     } else if (!open) {
-      if (line.includes('@store-strip')) throw new Error(`${name}:${i + 1}: malformed @store-strip marker`);
       kept.push(line);
     }
   });

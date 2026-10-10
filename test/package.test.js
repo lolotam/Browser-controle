@@ -50,6 +50,10 @@ test('store-strip markers remove their block; an unmatched marker stops the buil
   assert.throws(() => storeSource('src/x.js', lostEnd), /inside the block opened at line 2/);
   const twoBlocks = 'a\n// @store-strip-start\nx();\n// @store-strip-end\nkeep();\n// @store-strip-start\ny();\n// @store-strip-end\nb\n';
   assert.equal(storeSource('src/x.js', twoBlocks), 'a\nkeep();\nb\n');
+  // Misspelled markers stop the build, inside a block or outside one.
+  const typoInside = 'a\n// @store-strip-start\nx();\n// @store-strip-end-extra\nkeep();\n// @store-strip-end\nb\n';
+  assert.throws(() => storeSource('src/x.js', typoInside), /4: malformed/);
+  assert.throws(() => storeSource('src/x.js', 'a\n// @store-strip-ends\nb\n'), /2: malformed/);
   assert.match(storeSource('src/lib/build.js', 'export const STORE_BUILD = false;\n'), /STORE_BUILD = true/);
 });
 
