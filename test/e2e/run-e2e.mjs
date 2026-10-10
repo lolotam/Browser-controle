@@ -31,6 +31,53 @@ const PAGE = `<!doctype html><html><body>
 <script>customElements.define('relative-time', class extends HTMLElement { connectedCallback() { if (!this.shadowRoot) this.attachShadow({ mode: 'open' }).textContent = '2 days ago'; } });</script>
 </body></html>`;
 
+// Two suggestion widgets on one page. Subject: chips, its list inside the widget and
+// left open after a choice (so the City step must not use it). City: a combobox whose
+// list is a portal at the end of <body>, filled 700 ms after typing.
+const WIDGETS = `<!doctype html><html><body>
+<h1>Widgets</h1>
+<form onsubmit="return false">
+<div class="subject"><span id="chips"></span><input id="subject" placeholder="Subject" autocomplete="off"></div>
+<div class="city"><input id="city" role="combobox" aria-controls="city-list" aria-expanded="false" placeholder="City" autocomplete="off"></div>
+<button id="go" onclick="document.getElementById('out').textContent = 'Result: ' + [...document.querySelectorAll('#chips span')].map((c) => c.textContent).join('+') + ' / ' + city.value">Go</button>
+</form>
+<div id="out"></div>
+<ul id="city-list" role="listbox" hidden></ul>
+<script>
+const subjectBox = document.querySelector('.subject');
+subject.addEventListener('input', () => {
+  subjectBox.querySelector('[role=listbox]')?.remove();
+  const list = document.createElement('div');
+  list.setAttribute('role', 'listbox');
+  for (const name of ['Maths', 'Math History', 'Physics'].filter((n) => n.toLowerCase().includes(subject.value.toLowerCase()))) {
+    const o = document.createElement('div');
+    o.setAttribute('role', 'option');
+    o.textContent = name;
+    o.onclick = () => { const chip = document.createElement('span'); chip.textContent = name; chips.append(chip); subject.value = ''; };
+    list.append(o);
+  }
+  subjectBox.append(list);
+});
+let cityTimer = 0;
+city.addEventListener('input', () => {
+  clearTimeout(cityTimer);
+  const list = document.getElementById('city-list');
+  list.hidden = true;
+  cityTimer = setTimeout(() => {
+    list.replaceChildren(...['Delhi', 'New Delhi', 'Mumbai'].filter((n) => n.toLowerCase().includes(city.value.toLowerCase())).map((name) => {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'option');
+      li.textContent = name;
+      li.onclick = () => { city.value = name; list.hidden = true; city.setAttribute('aria-expanded', 'false'); };
+      return li;
+    }));
+    list.hidden = false;
+    city.setAttribute('aria-expanded', 'true');
+  }, 700);
+});
+</script>
+</body></html>`;
+
 const find = (text, re) => {
   const m = text.match(re);
   if (!m) throw new Error(`mock could not find ${re} in:\n${text}`);
@@ -59,6 +106,36 @@ function scriptedLlm({ askFirst = false } = {}) {
     if (Array.isArray(lastUser.content) && lastUser.content.some((c) => c.type === 'image_url' && c.image_url.url.startsWith('data:image/jpeg'))) sawImage = true;
     // Both releases read "2 days ago": each date must come with its own release name.
     if (/v9\.1\.0 · 2 days ago — 2026-10-08T10:00:00Z/.test(lastTool) && /v9\.0\.0 · 2 days ago — 2026-10-08T09:00:00Z/.test(lastTool)) sawDates = true;
+    return steps[Math.min(turn++, steps.length - 1)](lastTool);
+  };
+}
+
+/** Mock LLM for the "suggestions" scenario: autocomplete widgets through choose_suggestion. */
+function suggestionLlm() {
+  const seen = [];
+  const field = (last, placeholder) => Number(find(last, new RegExp(String.raw`\[(\d+)\] input[^\n]*placeholder="${placeholder}"`)));
+  const steps = [
+    () => ['read_page', {}],
+    (last) => ['choose_suggestion', { index: field(last, 'Subject'), text: 'Math', option: 'Maths' }],
+    (last) => {
+      seen.push(/Chose "Maths"/.test(last) ? 'subject ok' : 'subject FAILED');
+      return ['choose_suggestion', { index: field(last, 'City'), text: 'Del', option: 'Pune' }];
+    },
+    (last) => {
+      // Only the City list is offered, never the Subject list still open beside it.
+      const offered = last.match(/^Not chosen: No option reads exactly "Pune".*Options shown: (.*?)\. Call again/)?.[1];
+      seen.push(offered === '"Delhi", "New Delhi"' ? 'refusal ok' : `refusal FAILED (${offered})`);
+      return ['choose_suggestion', { index: field(last, 'City'), text: 'Del', option: 'Delhi' }];
+    },
+    (last) => {
+      seen.push(/Chose "Delhi"/.test(last) ? 'city ok' : 'city FAILED');
+      return ['click', { index: Number(find(last, /\[(\d+)\] button "Go"/)) }];
+    },
+    (last) => ['done', { success: true, report: `## Done\n- ${last.match(/Result: [^\n]*/)?.[0] ?? 'NO RESULT'}\n- checks: ${seen.join(', ')}` }],
+  ];
+  let turn = 0;
+  return (body) => {
+    const lastTool = [...body.messages].reverse().find((m) => m.role === 'tool')?.content ?? '';
     return steps[Math.min(turn++, steps.length - 1)](lastTool);
   };
 }
@@ -120,7 +197,9 @@ function startServer(handlers) {
     req.on('data', (c) => { raw += c; });
     req.on('end', () => {
       try {
-        if (req.url === '/page' || req.url.startsWith('/page?')) {
+        if (req.url === '/widgets') {
+          res.writeHead(200, { 'Content-Type': 'text/html' }).end(WIDGETS);
+        } else if (req.url === '/page' || req.url.startsWith('/page?')) {
           res.writeHead(200, { 'Content-Type': 'text/html' }).end(PAGE);
         } else if (req.url === '/v1/models') {
           res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ data: [{ id: 'mock-model' }] }));
@@ -173,7 +252,7 @@ function startServer(handlers) {
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, counts, base: `http://127.0.0.1:${server.address().port}` })));
 }
 
-async function runScenario(context, extensionId, { name, task, handlers, fast, expectReport, check, stopWorker = false, sendEarly = false }) {
+async function runScenario(context, extensionId, { name, task, handlers, fast, expectReport, check, stopWorker = false, sendEarly = false, pagePath = '/page' }) {
   const { server, counts, base } = await startServer(handlers);
   const panel = await context.newPage();
   const pageErrors = [];
@@ -206,7 +285,7 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
     await panel.click('#newChatBtn');
 
     const target = await context.newPage();
-    await target.goto(`${base}/page`);
+    await target.goto(`${base}${pagePath}`);
     await target.bringToFront();
     if (stopWorker) {
       // Chrome stops an idle worker while the panel stays open; the panel's first task must still arrive.
@@ -370,6 +449,14 @@ async function main() {
           ...(report.includes('screenshot seen: true') ? [] : ['screenshot never reached the model']),
           ...(report.includes('dates seen: true') ? [] : ['shadow-DOM release dates never reached the model']),
         ],
+      })),
+      ...(await runScenario(context, extensionId, {
+        name: 'suggestions',
+        task: 'Pick Maths and Delhi and press Go',
+        handlers: { llm: suggestionLlm() },
+        pagePath: '/widgets',
+        expectReport: 'Result: Maths / Delhi',
+        check: ({ report }) => (/checks: subject ok, refusal ok, city ok/.test(report) ? [] : [`choose_suggestion checks failed: ${report.match(/checks: .*/)?.[0]}`]),
       })),
       ...(await runScenario(context, extensionId, {
         name: 'worker-restart',

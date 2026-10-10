@@ -2,9 +2,16 @@
 // BrowserController. Every tool returns { output, images? } where output is the
 // text observation the model sees next.
 
+import { NOTE_MAX_CHARS } from './notebook.js';
+
 const obj = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const str = (description) => ({ type: 'string', description });
 const int = (description) => ({ type: 'integer', description });
+
+// Suggestion lists often arrive after a debounce or a network call.
+const SUGGESTION_WAIT_MS = 2000;
+const SUGGESTION_SETTLE_MS = 1000;
+const SUGGESTION_POLL_MS = 150;
 
 const DEFINITIONS = [
   { name: 'read_page', description: 'Get the current page URL, title, scroll position, the numbered list of interactive elements and the visible text. Call this before interacting with a page you have not seen yet.', parameters: obj({}) },
@@ -15,6 +22,7 @@ const DEFINITIONS = [
   { name: 'type_text', description: 'Focus an input/textarea/editable element by index and type text into it.', parameters: obj({ index: int('Element index'), text: str('Text to type'), clear: { type: 'boolean', description: 'Replace existing content (default true)' }, submit: { type: 'boolean', description: 'Press Enter afterwards' } }, ['index', 'text']) },
   { name: 'press_key', description: 'Press a key or chord on the focused element, e.g. "Enter", "Escape", "Tab", "ArrowDown", "Control+A".', parameters: obj({ key: str('Key or chord') }, ['key']) },
   { name: 'select_option', description: 'Choose an option of a <select> element by its visible text or value.', parameters: obj({ index: int('Element index of the <select>'), option: str('Option text or value') }, ['index', 'option']) },
+  { name: 'choose_suggestion', description: 'Pick from an autocomplete field or custom dropdown (a list that appears while typing, like city, tag or subject pickers): types text into the field, waits for its list, and clicks the one option that reads exactly `option` (default: the typed text). Never presses Enter.', parameters: obj({ index: int('Element index of the field'), text: str('Text to type to open or filter the list'), option: str('Exact text of the option to pick, when it differs from the typed text') }, ['index', 'text']) },
   { name: 'hover', description: 'Move the mouse over an element (opens hover menus).', parameters: obj({ index: int('Element index') }, ['index']) },
   { name: 'scroll', description: 'Scroll the page (or the scrollable area under an element) up or down by about one screen.', parameters: obj({ direction: { type: 'string', enum: ['up', 'down'] }, index: int('Optional element index to scroll inside'), screens: { type: 'number', description: 'How many screens (default 1)' } }, ['direction']) },
   { name: 'get_text', description: 'Read more of the page text, for collecting information from long pages.', parameters: obj({ start: int('Character offset (default 0)'), length: int('Characters to read (default 6000, max 15000)') }) },
@@ -26,6 +34,8 @@ const DEFINITIONS = [
   { name: 'open_tab', description: 'Open a URL in a new background tab in your group and control it.', parameters: obj({ url: str('Absolute URL') }, ['url']) },
   { name: 'close_tab', description: 'Close one of your tabs by id.', parameters: obj({ tab_id: int('Tab id') }, ['tab_id']) },
   { name: 'run_javascript', description: 'Evaluate a JavaScript expression in the page and return its JSON-serialisable value. Use for precise data extraction.', parameters: obj({ expression: str('JavaScript expression; may be an async IIFE') }, ['expression']), javascript: true },
+  { name: 'note', description: 'Save a finding to your notebook (up to 1500 characters): items, prices, names, links. Notes are never trimmed, so save what you collect on each page before leaving it when a task spans several pages.', parameters: obj({ text: str('What you found, with enough detail to use in the final report') }, ['text']) },
+  { name: 'read_notes', description: 'Read everything saved in your notebook for this session.', parameters: obj({}) },
   { name: 'ask_user', description: 'Ask the user a question and wait for the answer. Required before purchases, payments, sending messages/emails/posts, deleting data, or entering credentials; also use when the task is ambiguous or you hit a login/CAPTCHA you cannot pass.', parameters: obj({ question: str('Question for the user') }, ['question']) },
   { name: 'done', description: 'Finish the task and give the user the final report in Markdown, in the user\'s language.', parameters: obj({ report: str('Final report: what was done and every piece of information collected, with source links'), success: { type: 'boolean', description: 'Whether the task was fully completed' } }, ['report', 'success']) },
 ];
@@ -53,7 +63,7 @@ export function formatSnapshot(snap) {
   ].join('\n');
 }
 
-export function createToolExecutor(browser, { askUser, signal = null }) {
+export function createToolExecutor(browser, { askUser, signal = null, notebook = null, onNotebookChange = () => {} }) {
   const overlay = browser.overlay;
   // Set per call by execute: inside a batch, an action that left the page where it
   // was skips the snapshot (the batch's last action reports the page state).
@@ -67,7 +77,9 @@ export function createToolExecutor(browser, { askUser, signal = null }) {
       call.pageChanged = true;
     }
     try {
-      return `${prefix}\n\n${formatSnapshot(await browser.snapshot())}`;
+      // The notebook rides on the latest full observation; older copies are trimmed with it.
+      const notes = notebook?.format();
+      return `${prefix}\n\n${formatSnapshot(await browser.snapshot())}${notes ? `\n\n${notes}` : ''}`;
     } catch (err) {
       const tab = await browser.currentTab();
       return `${prefix}\nNow at ${tab.url} — page content unavailable: ${err.message}`;
@@ -114,6 +126,39 @@ export function createToolExecutor(browser, { askUser, signal = null }) {
       await overlay.pointTo(await browser.locate(index), ['select', { option: preview(option) }]);
       const { selected } = await browser.element(index, 'select-option', option);
       return observe(`Selected "${selected}" in [${index}].`);
+    },
+    choose_suggestion: async ({ index, text, option }) => {
+      const wanted = String(option ?? text);
+      const field = await browser.locate(index);
+      await overlay.pointTo(field, ['select', { option: preview(wanted) }]);
+      await browser.clickAt(field.x, field.y);
+      await browser.element(index, 'select-all');
+      await browser.insertText(String(text));
+      let scan;
+      for (const end = Date.now() + SUGGESTION_WAIT_MS; ;) {
+        scan = await browser.suggestions(index, wanted, 'scan');
+        if (scan.matches > 0 || Date.now() >= end || signal?.aborted) break;
+        await sleep(SUGGESTION_POLL_MS, signal);
+      }
+      if (scan.matches !== 1) {
+        const more = scan.total > scan.options.length ? ` (+${scan.total - scan.options.length} more)` : '';
+        const shown = scan.options.length ? ` Options shown: ${scan.options.map((o) => `"${o}"`).join(', ')}${more}.` : '';
+        const why = scan.matches > 1 ? `${scan.matches} options read exactly "${wanted}"`
+          : scan.total ? `No option reads exactly "${wanted}"`
+            : `No suggestion list tied to [${index}] appeared within ${SUGGESTION_WAIT_MS / 1000} s`;
+        return observe(`Not chosen: ${why}; nothing was clicked and "${preview(text)}" is still typed in [${index}].${shown} Call again with the exact option, or click it from the element list.`);
+      }
+      const spot = await browser.suggestions(index, wanted, 'locate');
+      await overlay.pointTo(spot, ['select', { option: preview(spot.text) }]);
+      await browser.clickAt(spot.x, spot.y);
+      let shown = false;
+      for (const end = Date.now() + SUGGESTION_SETTLE_MS; ;) {
+        shown = (await browser.suggestions(index, wanted, 'verify').catch(() => ({ ok: false }))).ok;
+        if (shown || Date.now() >= end || signal?.aborted) break;
+        await sleep(SUGGESTION_POLL_MS, signal);
+      }
+      if (!shown) return observe(`Clicked "${spot.text}" in the list of [${index}], but the field does not show it; check the page before going on.`);
+      return observe(`Chose "${spot.text}" in [${index}].`);
     },
     hover: async ({ index }) => {
       const target = await browser.locate(index);
@@ -175,6 +220,17 @@ export function createToolExecutor(browser, { askUser, signal = null }) {
       return json.length > 15000 ? `${json.slice(0, 15000)}… (truncated)` : json;
     },
     ask_user: async ({ question }) => `User answered: ${await askUser(question)}`,
+    note: async ({ text }) => {
+      if (!notebook) throw new Error('No notebook in this session.');
+      const clean = String(text ?? '').trim();
+      if (!clean) throw new Error('The note is empty.');
+      if (clean.length > NOTE_MAX_CHARS) throw new Error(`The note is ${clean.length} characters; the limit is ${NOTE_MAX_CHARS}. Split it into several notes.`);
+      const url = (await browser.currentTab().catch(() => null))?.url ?? '';
+      const count = notebook.add(clean, url);
+      onNotebookChange();
+      return `Saved (${count} note${count === 1 ? '' : 's'}).`;
+    },
+    read_notes: async () => notebook?.format() || 'No notes yet.',
   };
 
   /** `observe: false` marks an action that is not the last of its turn's batch. */

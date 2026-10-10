@@ -17,7 +17,8 @@ export function emptyLog() {
 }
 
 export class FallbackSession {
-  constructor({ primary, createBackup = null, labels = {}, notify = () => {}, log = emptyLog() }) {
+  constructor({ primary, createBackup = null, labels = {}, notify = () => {}, log = emptyLog(), notebook = null }) {
+    this.notebook = notebook;
     this.active = primary;
     this.createBackup = createBackup;
     this.labels = labels;
@@ -60,7 +61,7 @@ export class FallbackSession {
     this.notify({ level: 'error', kind: 'switched', from: this.labels.primary, to: this.labels.backup, ...failure });
     this.switched = true;
     this.active = this.createBackup();
-    this.active.addUserMessage(handoffMessage(this.log, failure.reason), this.log.last?.images ?? []);
+    this.active.addUserMessage(handoffMessage(this.log, failure.reason, this.notebook), this.log.last?.images ?? []);
     try {
       return await this.active.next(options);
     } catch (err) {
@@ -76,16 +77,18 @@ export class FallbackSession {
 }
 
 /** What a model needs to continue someone else's task without redoing it. */
-export function handoffMessage(log, reason) {
+export function handoffMessage(log, reason, notebook = null) {
   const parts = [`You are taking over a browser task from another AI model that stopped working (${reason}).`];
   parts.push(`Task:\n${log.task ?? '(unknown)'}`);
-  const notes = log.notes.slice(-HANDOFF_NOTES).map((n) => `- ${String(n).slice(0, NOTE_CHARS)}`);
-  if (notes.length) parts.push(`Messages during the task:\n${notes.join('\n')}`);
+  const messages = log.notes.slice(-HANDOFF_NOTES).map((n) => `- ${String(n).slice(0, NOTE_CHARS)}`);
+  if (messages.length) parts.push(`Messages during the task:\n${messages.join('\n')}`);
   const steps = log.steps.slice(-HANDOFF_STEPS);
   const offset = log.steps.length - steps.length;
   if (steps.length) {
     parts.push(`Steps already done (do not repeat them):\n${steps.map((s, i) => `${offset + i + 1}. ${s.name} ${JSON.stringify(s.args ?? {})} → ${s.result}`).join('\n')}`);
   }
+  const notes = notebook?.format();
+  if (notes) parts.push(notes);
   if (log.last?.text) parts.push(`Latest page observation:\n${log.last.text}`);
   parts.push('Continue the task from the current state. Do not repeat completed steps.');
   return parts.join('\n\n');

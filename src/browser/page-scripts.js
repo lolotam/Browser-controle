@@ -211,6 +211,99 @@ export function elementAction(index, action, value, quiet) {
   return { error: `Unknown element action ${action}` };
 }
 
+/**
+ * The suggestion list of an autocomplete field or custom dropdown. `mode` is
+ * 'scan' (what the list offers), 'locate' (where the one exact match is, checked
+ * again right before the click) or 'verify' (whether the field now shows it).
+ * Only options tied to this field count: named by its aria-controls / aria-owns /
+ * aria-activedescendant, or inside its own widget, so a second widget's open list
+ * is never used. Text inside an open list never counts as chosen.
+ */
+export function suggestionAction(index, wanted, mode) {
+  const list = window.__agentElements || [];
+  let field = list[index];
+  if (!field || !field.isConnected) field = document.querySelector(`[data-agent-idx="${index}"]`);
+  if (!field) return { error: `Element [${index}] no longer exists. Call read_page to refresh the element list.` };
+
+  const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const target = norm(wanted);
+  const visible = (el) => {
+    if (!el.isConnected || !el.getClientRects().length) return false;
+    const style = getComputedStyle(el);
+    return style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity) !== 0;
+  };
+  const isOtherField = (el) => el !== field && !el.contains(field) && !el.closest('[role=listbox]') && visible(el) &&
+    (el.isContentEditable || el.matches('textarea, select, [role=combobox]') ||
+      (el.tagName === 'INPUT' && !/^(hidden|submit|button|reset|image|checkbox|radio)$/i.test(el.type)));
+
+  // The field's own widget: the widest ancestor (up to 6 levels) holding no other field.
+  let widget = null;
+  for (let p = field.parentElement, depth = 0; p && p !== document.body && depth < 6; p = p.parentElement, depth += 1) {
+    if ([...p.querySelectorAll('input, textarea, select, [role=combobox], [contenteditable]')].some(isOtherField)) break;
+    widget = p;
+  }
+
+  const containers = [];
+  const named = (el) => {
+    for (const attr of ['aria-controls', 'aria-owns']) {
+      for (const id of (el.getAttribute(attr) || '').split(/\s+/)) {
+        const found = id && document.getElementById(id);
+        if (found) containers.push(found);
+      }
+    }
+  };
+  named(field);
+  const activeId = field.getAttribute('aria-activedescendant');
+  const active = activeId && document.getElementById(activeId);
+  if (active) containers.push(active.closest('[role=listbox]') || active.parentElement || active);
+  const combo = field.closest('[role=combobox]');
+  if (combo && combo !== field) {
+    named(combo);
+    containers.push(combo);
+  }
+  if (widget) containers.push(widget);
+
+  const seen = new Set();
+  const options = [];
+  for (const c of containers) {
+    let found = [...(c.matches('[role=option]') ? [c] : []), ...c.querySelectorAll('[role=option]')];
+    if (!found.length) found = [...c.querySelectorAll('[id*="-option-"]')]; // react-select before v5 marks options only by id
+    for (const o of found) {
+      if (seen.has(o) || !visible(o) || o.matches('[aria-disabled=true], [disabled]')) continue;
+      seen.add(o);
+      options.push(o);
+    }
+  }
+  const label = (o) => (o.innerText || o.textContent || '').replace(/\s+/g, ' ').trim();
+  const matches = options.filter((o) => norm(label(o)) === target);
+
+  if (mode === 'scan') {
+    return { tied: containers.length > 0, total: options.length, options: options.slice(0, 10).map(label), matches: matches.length };
+  }
+  if (mode === 'locate') {
+    if (matches.length !== 1) return { error: `The list changed: ${matches.length} options now read "${wanted}". Nothing was clicked.` };
+    const option = matches[0];
+    option.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+    const r = option.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, rect: { left: r.left, top: r.top, width: r.width, height: r.height }, text: label(option) };
+  }
+  if (mode === 'verify') {
+    // A plain autocomplete shows the choice as the field's value once its list closed;
+    // a chip or single-value widget shows it as text in the widget, outside any list.
+    if (norm(field.value) === target && !matches.length) return { ok: true };
+    const root = widget || field.parentElement;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let text = '';
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const host = n.parentElement;
+      if (!host || host.closest('[role=listbox], [role=option], [id*="-option-"]') || !visible(host)) continue;
+      text += ` ${n.nodeValue}`;
+    }
+    return { ok: norm(text).includes(target) };
+  }
+  return { error: `Unknown suggestion action ${mode}` };
+}
+
 /** Returns a slice of the page's visible text for reading long pages, and the page's dates. */
 export function pageText(start, length) {
   // Machine-readable dates (<time>, GitHub's <relative-time>, any [datetime]). Their

@@ -3,7 +3,7 @@
 // real user's, and work on sites that ignore synthetic DOM events.
 
 import { AgentOverlay } from './overlay.js';
-import { snapshotPage, elementAction, pageText, pageReadyState, devicePixelRatioOf, domSettled, documentIdOf } from './page-scripts.js';
+import { snapshotPage, elementAction, suggestionAction, pageText, pageReadyState, devicePixelRatioOf, domSettled, documentIdOf } from './page-scripts.js';
 
 const CDP_VERSION = '1.3';
 const RESTRICTED = /^(chrome|chrome-extension|edge|about|devtools|view-source):|^https:\/\/chrome(webstore)?\.google\.com\/webstore/;
@@ -157,6 +157,13 @@ export class BrowserController {
 
   async element(index, action, value = null) {
     const result = await this.inject(elementAction, [index, action, value, this.overlay.enabled]);
+    if (result?.error) throw new Error(result.error);
+    return result;
+  }
+
+  /** Reads or acts on the suggestion list tied to an autocomplete field (see suggestionAction). */
+  async suggestions(index, wanted, mode) {
+    const result = await this.inject(suggestionAction, [index, wanted, mode]);
     if (result?.error) throw new Error(result.error);
     return result;
   }

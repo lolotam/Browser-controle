@@ -6,6 +6,7 @@ import { MODEL_IDLE_MS, fetchModel, readSse } from '../lib/sse.js';
 import { requestJson } from '../lib/json.js';
 import { ProviderHttpError, readError, withRetry } from '../lib/retry.js';
 import { parseTextToolCalls } from './text-tool-calls.js';
+import { kindOf } from '../agent/tool-kinds.js';
 
 const KEEP_FULL_OBSERVATIONS = 2;
 const TRIMMED_OBSERVATION_CHARS = 400;
@@ -216,9 +217,18 @@ export function createAccumulator() {
   };
 }
 
+/**
+ * Keeps the last two page observations and the latest notebook read in full; older
+ * ones are cut. Notes are short and never cut, and do not push observations out.
+ */
 export function compactMessages(messages) {
+  const names = new Map();
+  for (const m of messages) for (const tc of m.tool_calls ?? []) names.set(tc.id, tc.function?.name);
   const toolMessages = messages.filter((m) => m.role === 'tool');
-  for (const m of toolMessages.slice(0, -KEEP_FULL_OBSERVATIONS)) {
+  const kindOfResult = (m) => kindOf(names.get(m.tool_call_id));
+  const observations = toolMessages.filter((m) => !['bookkeeping', 'notes'].includes(kindOfResult(m)));
+  const notebookReads = toolMessages.filter((m) => kindOfResult(m) === 'notes');
+  for (const m of [...observations.slice(0, -KEEP_FULL_OBSERVATIONS), ...notebookReads.slice(0, -1)]) {
     if (typeof m.content === 'string' && m.content.length > TRIMMED_OBSERVATION_CHARS + 50) {
       m.content = `${m.content.slice(0, TRIMMED_OBSERVATION_CHARS)}\n…[older page state trimmed]`;
     }

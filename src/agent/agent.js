@@ -4,10 +4,12 @@
 // confident step itself or hands the step to the LLM with ranked options.
 
 import { escalationMessage } from '../fast/fast-layer.js';
+import { kindOf } from './tool-kinds.js';
 
 const SKIPPED_PAGE_CHANGED = 'Not executed: the page changed after an earlier action in this turn. Decide again from the new page state.';
 const SKIPPED_AFTER_ERROR = 'Not executed: an earlier action in this turn failed. Decide again.';
 const SKIPPED_AFTER_ASK = 'Not executed: you asked the user a question in this turn. Read the answer, then decide again.';
+const SKIPPED_AFTER_BOUNDARY = 'Not executed: an earlier action in this turn needs you to look at its result first. Decide again.';
 const SUMMARY_PROMPT = 'You have reached the step limit. Stop using tools and write the final report now: what was done, all information collected with sources, and what remains.';
 
 export async function runAgent({ session, execute, task, maxSteps, signal, emit, fastLayer = null }) {
@@ -63,7 +65,10 @@ export async function runAgent({ session, execute, task, maxSteps, signal, emit,
         // Several actions in one turn: only the last returns the page state, which
         // saves a full page snapshot per action; an earlier one reports it only if
         // the page changed, and then the rest of the batch is not run.
-        const last = !pending.some((c) => c.name !== 'done');
+        // The turn's last page-changing call reports the page; notes after it do not count.
+        // A boundary tool (ask_user, choose_suggestion) always reports in full and ends the batch.
+        const boundary = kindOf(call.name) === 'boundary';
+        const last = boundary || !pending.some((c) => ['observe', 'boundary'].includes(kindOf(c.name)));
         emit({ type: 'tool-start', step, name: call.name, args: call.args });
         const result = await execute(call.name, call.args, { observe: last });
         emit({ type: 'tool-end', step, name: call.name, ok: !result.isError, summary: firstLine(result.output) });
@@ -76,6 +81,7 @@ export async function runAgent({ session, execute, task, maxSteps, signal, emit,
         // when the page changed under an earlier action.
         const reason = result.isError ? SKIPPED_AFTER_ERROR
           : call.name === 'ask_user' ? SKIPPED_AFTER_ASK
+            : boundary ? SKIPPED_AFTER_BOUNDARY
             : result.pageChanged ? SKIPPED_PAGE_CHANGED : null;
         if (reason) for (const skipped of pending.splice(0)) session.addToolResult(skipped.id, reason);
       }

@@ -51,9 +51,9 @@ function slotLabel(slot) {
  * reaches the new primary as a handoff message: after a task the backup
  * finished, after a settings change, or when a saved session is reopened.
  */
-export function createModelSession(settings, { notify, seed = null, conversationId }) {
+export function createModelSession(settings, { notify, seed = null, conversationId, notebook = null }) {
   const primary = createProviderSession(settings, settings, conversationId, notify);
-  if (seed?.log?.task) primary.addUserMessage(handoffMessage(seed.log, seed.reason));
+  if (seed?.log?.task) primary.addUserMessage(handoffMessage(seed.log, seed.reason, notebook));
   const backupEnabled = settings.fallback.enabled;
   return new FallbackSession({
     primary,
@@ -61,6 +61,7 @@ export function createModelSession(settings, { notify, seed = null, conversation
     labels: { primary: slotLabel(settings), backup: backupEnabled ? slotLabel(settings.fallback) : '' },
     notify,
     log: seed?.log ?? emptyLog(),
+    notebook,
   });
 }
 
