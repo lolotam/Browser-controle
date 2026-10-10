@@ -69,7 +69,13 @@ const data = {
   runs: runs.map((r) => ({ ...r, videos: Object.fromEntries(Object.entries(r.videos).map(([k, f]) => [k, assets[f] ? `/_blob/${assets[f]}` : null])) })),
 };
 const template = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'report-template.html'), 'utf8');
-const html = template.replace('/*__DATA__*/null', JSON.stringify(data).replace(/</g, '\\u003c'));
+const named = meta.set === 'hard'
+  ? template
+    .replace('<title>Postora Model Showcase</title>', '<title>Postora Hard Showcase</title>')
+    .replace('<h1>Postora Model Showcase</h1>', '<h1>Postora Hard Showcase</h1>')
+    .replace('Ten fixed tasks on public websites,', 'Ten harder, multi-step tasks on public websites (several pages, filters, a long form, arithmetic, an Arabic comparison),')
+  : template;
+const html = named.replace('/*__DATA__*/null', JSON.stringify(data).replace(/</g, '\\u003c'));
 fs.writeFileSync(path.join(runDir, 'report.html'), html);
 const files = fs.readdirSync(webDir).filter((f) => f.endsWith('.webm'));
 const mb = files.reduce((n, f) => n + fs.statSync(path.join(webDir, f)).size, 0) / 1048576;
