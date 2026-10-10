@@ -129,3 +129,27 @@ test('exhausted quota on the main model: exactly one switch to the backup', asyn
     globalThis.fetch = original;
   }
 });
+
+test('an error body that stalls or runs long is read only up to 4 KB and within the time left', async () => {
+  const { readError } = await import('../src/lib/retry.js');
+  // Headers arrive, then the body sends one chunk and never finishes.
+  const stalled = new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('{"error":"slow')); } }), { status: 503 });
+  const started = Date.now();
+  const err = await readError(stalled, 200);
+  assert.ok(Date.now() - started < 2000);
+  assert.equal(err.status, 503);
+  assert.equal(err.detail, '{"error":"slow');
+  const huge = new Response('x'.repeat(100000), { status: 500 });
+  assert.equal((await readError(huge)).detail.length, 4096);
+});
+
+test('all pauses of one request share the 30 s wait budget', async () => {
+  let calls = 0;
+  const waits = [];
+  await assert.rejects(withRetry(async () => {
+    calls += 1;
+    throw new ProviderHttpError({ status: 429, detail: 'slow down', retryAfterMs: 25000 });
+  }, { wait: async (ms) => { waits.push(ms); }, random: () => 0.5 }), { status: 429 });
+  assert.deepEqual(waits, [25000]); // a second 25 s pause would pass 30 s in all: hand over instead
+  assert.equal(calls, 2);
+});
