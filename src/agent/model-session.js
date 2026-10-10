@@ -5,7 +5,7 @@ import { FallbackSession, emptyLog, handoffMessage } from './fallback-session.js
 import { buildSystemPrompt } from './prompt.js';
 import { toolDefinitions } from './tools.js';
 import { askWithBackup, fastClientFor } from '../fast/clients.js';
-import { COMPATIBLE_PRESETS } from '../lib/settings.js';
+import { COMPATIBLE_PRESETS, effectiveSettings } from '../lib/settings.js';
 import { ChatgptSession } from '../providers/chatgpt.js';
 import { CompatibleSession } from '../providers/openai-compatible.js';
 
@@ -15,8 +15,8 @@ import { CompatibleSession } from '../providers/openai-compatible.js';
  * conversations (OpenCode) sees the same one after the worker restarts.
  */
 function createProviderSession(slot, settings, conversationId, notify = null) {
-  const tools = toolDefinitions(settings);
-  const systemPrompt = buildSystemPrompt(settings);
+  const tools = toolDefinitions(effectiveSettings(settings));
+  const systemPrompt = buildSystemPrompt(effectiveSettings(settings));
   if (slot.provider === 'chatgpt') {
     if (!slot.chatgpt.model) throw new Error('Choose a ChatGPT model in settings first.');
     return new ChatgptSession({ ...slot.chatgpt, systemPrompt, tools, notify });

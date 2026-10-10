@@ -33,7 +33,9 @@ const DEFINITIONS = [
   { name: 'switch_tab', description: 'Control another tab. A tab outside your group joins it; a tab another running session uses is refused.', parameters: obj({ tab_id: int('Tab id from list_tabs') }, ['tab_id']) },
   { name: 'open_tab', description: 'Open a URL in a new background tab in your group and control it.', parameters: obj({ url: str('Absolute URL') }, ['url']) },
   { name: 'close_tab', description: 'Close one of your tabs by id.', parameters: obj({ tab_id: int('Tab id') }, ['tab_id']) },
+  // @store-strip-start
   { name: 'run_javascript', description: 'Evaluate a JavaScript expression in the page and return its JSON-serialisable value. Use for precise data extraction.', parameters: obj({ expression: str('JavaScript expression; may be an async IIFE') }, ['expression']), javascript: true },
+  // @store-strip-end
   { name: 'note', description: 'Save a finding to your notebook (up to 1500 characters): items, prices, names, links. Notes are never trimmed, so save what you collect on each page before leaving it when a task spans several pages.', parameters: obj({ text: str('What you found, with enough detail to use in the final report') }, ['text']) },
   { name: 'read_notes', description: 'Read everything saved in your notebook for this session.', parameters: obj({}) },
   { name: 'ask_user', description: 'Ask the user a question and wait for the answer. Required before purchases, payments, sending messages/emails/posts, deleting data, or entering credentials; also use when the task is ambiguous or you hit a login/CAPTCHA you cannot pass.', parameters: obj({ question: str('Question for the user') }, ['question']) },
@@ -63,7 +65,7 @@ export function formatSnapshot(snap) {
   ].join('\n');
 }
 
-export function createToolExecutor(browser, { askUser, signal = null, notebook = null, onNotebookChange = () => {} }) {
+export function createToolExecutor(browser, { askUser, signal = null, notebook = null, onNotebookChange = () => {}, allowed = null }) {
   const overlay = browser.overlay;
   // Set per call by execute: inside a batch, an action that left the page where it
   // was skips the snapshot (the batch's last action reports the page state).
@@ -214,11 +216,13 @@ export function createToolExecutor(browser, { askUser, signal = null, notebook =
       await chrome.tabs.remove(tab_id);
       return `Closed tab ${tab_id}.`;
     },
+    // @store-strip-start
     run_javascript: async ({ expression }) => {
       const value = await browser.evaluate(expression);
       const json = JSON.stringify(value, null, 1) ?? 'undefined';
       return json.length > 15000 ? `${json.slice(0, 15000)}… (truncated)` : json;
     },
+    // @store-strip-end
     ask_user: async ({ question }) => `User answered: ${await askUser(question)}`,
     note: async ({ text }) => {
       if (!notebook) throw new Error('No notebook in this session.');
@@ -235,7 +239,8 @@ export function createToolExecutor(browser, { askUser, signal = null, notebook =
 
   /** `observe: false` marks an action that is not the last of its turn's batch. */
   return async function execute(name, args, { observe: full = true } = {}) {
-    const handler = handlers[name];
+    // Only tools offered in this session run, even when restored history asks for another.
+    const handler = !allowed || allowed.has(name) ? handlers[name] : null;
     if (!handler) return { output: `Unknown tool "${name}".`, isError: true };
     const brief = !full && name !== 'read_page';
     call = { brief, at: brief ? await where() : null, pageChanged: false };

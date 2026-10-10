@@ -1,6 +1,9 @@
 // Builds the Chrome Web Store upload: dist/postora-browser-agent-v<version>.zip with only
 // what the extension runs (manifest, locales, icons, src). The manifest's "key"
-// is dropped, since the store assigns the extension's ID itself.
+// is dropped, since the store assigns the extension's ID itself. The store build
+// leaves out the run-JavaScript tool: src/lib/build.js says STORE_BUILD = true and
+// code between "// @store-strip-start" and "// @store-strip-end" is removed. All of
+// this happens on the copies going into the ZIP; the repository is never changed.
 //
 //   npm run package
 
@@ -40,6 +43,30 @@ export function overlongDescriptions(root = ROOT) {
     const messages = JSON.parse(fs.readFileSync(path.join(root, '_locales', lang, 'messages.json'), 'utf8'));
     const n = [...(messages.extDescription?.message ?? '')].length;
     return n > MAX_DESCRIPTION ? [`${lang}: ${n} chars`] : [];
+  });
+}
+
+const STRIP = /^[ \t]*\/\/ @store-strip-start[^\n]*\n[\s\S]*?^[ \t]*\/\/ @store-strip-end[^\n]*\n/gm;
+const BUILD_FLAG = 'export const STORE_BUILD = false;';
+
+/** A source file as it ships in the store build. */
+export function storeSource(name, text) {
+  let out = text.replace(STRIP, '');
+  if (/@store-strip-(start|end)/.test(out)) throw new Error(`${name}: unmatched @store-strip marker`);
+  if (name === 'src/lib/build.js') {
+    if (!out.includes(BUILD_FLAG)) throw new Error(`${name}: "${BUILD_FLAG}" not found`);
+    out = out.replace(BUILD_FLAG, 'export const STORE_BUILD = true;');
+  }
+  return out;
+}
+
+/** Every file of the store build with the bytes it ships with. */
+export function packageEntries(root = ROOT) {
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  return packageFiles(root).map((name) => {
+    if (name === 'manifest.json') return { name, data: Buffer.from(`${JSON.stringify(storeManifest(manifest), null, 2)}\n`) };
+    const data = fs.readFileSync(path.join(root, name));
+    return { name, data: /\.(js|mjs|html)$/.test(name) ? Buffer.from(storeSource(name, data.toString('utf8'))) : data };
   });
 }
 
@@ -109,12 +136,7 @@ function main() {
   const overlong = overlongDescriptions();
   if (overlong.length) throw new Error(`Store descriptions must be ≤ ${MAX_DESCRIPTION} characters: ${overlong.join(', ')}`);
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
-  const entries = packageFiles().map((name) => ({
-    name,
-    data: name === 'manifest.json'
-      ? Buffer.from(`${JSON.stringify(storeManifest(manifest), null, 2)}\n`)
-      : fs.readFileSync(path.join(ROOT, name)),
-  }));
+  const entries = packageEntries();
   const out = path.join(ROOT, 'dist', `postora-browser-agent-v${manifest.version}.zip`);
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, zip(entries));

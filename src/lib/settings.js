@@ -1,6 +1,7 @@
 // User settings persisted in chrome.storage.local.
 
 import { keyGroup, shareKeys } from './keys.js';
+import { STORE_BUILD } from './build.js';
 
 // Main model and backup providers (both use this list). thinkingStyle 'none' sends
 // no reasoning parameter, for APIs whose models reject reasoning_effort; 'gemini'
@@ -95,6 +96,11 @@ export const DEFAULT_SETTINGS = {
   // One API key per provider for every slot (see shareKeys).
   keys: {},
 };
+
+/** The settings a task runs with: the store build never offers the run-JavaScript tool. */
+export function effectiveSettings(settings) {
+  return STORE_BUILD ? { ...settings, allowJavascript: false } : settings;
+}
 
 export async function loadSettings() {
   const { settings } = await chrome.storage.local.get('settings');

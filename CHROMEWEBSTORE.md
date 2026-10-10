@@ -110,7 +110,7 @@ Paste each line into the matching field of the dashboard's Privacy tab.
 | `notifications` | optional_permissions | Asked for only when the user turns on "Notify me" in Settings, and given back when they turn it off. Shows a desktop notification when a task finishes, needs the user's answer or stops with an error, only while the user is on another tab. The text is generic ("A task finished"): no task, page or report content. |
 | `<all_urls>` | host_permissions | The user can ask the agent to work on any website, so it must be able to read and operate whichever site the task needs. Host access also lets the extension call the AI provider address the user chooses, including a custom or local one (for example `http://localhost:11434`). Access is used only for tabs in the running session and for the chosen provider. |
 
-**Remote code:** No. All code ships in the package. The optional "run JavaScript" tool (off by default) evaluates an expression the model writes in the controlled page, to extract data. See Known Issues.
+**Remote code:** No. All code ships in the package, and the store package has no way to run code it did not ship: `npm run package` builds it without the development build's "run JavaScript" tool (the tool, its handler, its prompt line, its settings switch and `Runtime.evaluate` are all left out, and the package tests check that). The agent acts on pages only through fixed tools: clicks, typing, scrolling and reading. This removes a review risk; it does not by itself guarantee approval, since the `debugger` permission is reviewed on its own merits.
 
 ## Privacy & Data Use
 
@@ -168,7 +168,6 @@ Paste each line into the matching field of the dashboard's Privacy tab.
 ### Known Issues / Limitations (review risks)
 - **`debugger` + `<all_urls>`** puts the item in in-depth review, which can take longer than usual. The justifications above explain both.
 - **ChatGPT account sign-in** reuses the Codex CLI's sign-in and backend. OpenAI may change or block it, and reviewers may question it. The listing describes it neutrally and makes no claim of OpenAI endorsement.
-- **"Run JavaScript" tool** (off by default) runs model-written expressions in pages. A reviewer could read this as remote code. If it is flagged, ship a build without that tool.
 - Trademarks (OpenAI, ChatGPT, Gemini, Grok…) appear only to name the providers the user can connect, not in the extension name or icon.
 
 ### Rejection History

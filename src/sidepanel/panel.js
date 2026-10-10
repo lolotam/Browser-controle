@@ -7,6 +7,7 @@ import { bindTestButton } from './test-button.js';
 import { FEEDBACK_FORM_ID, afterDismissal, afterRating, sendFeedback, shouldAskForRating } from '../lib/feedback.js';
 import { googleAccount, signInWithGoogle, signOutOfGoogle } from '../lib/google-account.js';
 import { RECOMMENDED_SETUP, recommendedSlots } from '../lib/settings.js';
+import { STORE_BUILD } from '../lib/build.js';
 
 const $ = (id) => document.getElementById(id);
 const request = async (type, payload = {}) => {
@@ -877,6 +878,9 @@ function syncRecommended(open = false) {
   $('showRecommended').hidden = !$('recommended').hidden;
   $('recommendedNote').hidden = true;
 }
+
+// The store build has no run-JavaScript tool, so it has no switch for it either.
+$('allowJavascript').closest('label').hidden = STORE_BUILD;
 
 $('keyLinkMain').href = RECOMMENDED_SETUP.main.keyUrl;
 $('keyLinkBackup').href = RECOMMENDED_SETUP.backup.keyUrl;
