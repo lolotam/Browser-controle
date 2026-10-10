@@ -7,6 +7,7 @@ import { createFastAsk, createModelSession, modelSessionKey } from '../agent/mod
 import { describeTabContext } from '../agent/prompt.js';
 import { createToolExecutor } from '../agent/tools.js';
 import { BrowserController } from '../browser/controller.js';
+import { Notebook } from '../agent/notebook.js';
 import { createFastLayer } from '../fast/fast-layer.js';
 import { loadSettings } from '../lib/settings.js';
 import * as store from '../sessions/store.js';
@@ -22,6 +23,7 @@ export class SessionRunner {
     this.titled = meta.titled;
     this.transcript = body.transcript ?? [];
     this.storedLog = body.log;
+    this.notebook = Notebook.from(body.notebook); // kept for follow-up tasks and reopening
     this.onSessionsChanged = onSessionsChanged;
     this.ports = new Set();
     this.session = null;
@@ -95,7 +97,7 @@ export class SessionRunner {
       this.browser.overlay.begin({ enabled: settings.showCursor, uiLanguage: settings.uiLanguage });
       this.browser.tabId = null; // each task starts on the tab the user is looking at
       const tab = await this.browser.currentTab();
-      const execute = createToolExecutor(this.browser, { askUser: (q) => this.askUser(q, abort.signal), signal: abort.signal });
+      const execute = createToolExecutor(this.browser, { askUser: (q) => this.askUser(q, abort.signal), signal: abort.signal, notebook: this.notebook, onNotebookChange: () => this.scheduleSave() });
       const fastLayer = settings.fast.enabled && settings.fast.apiKey
         ? createFastLayer({ config: settings.fast, browser: this.browser, execute, task: text, ask: createFastAsk(settings.fast, this.notify) })
         : null;
@@ -133,7 +135,7 @@ export class SessionRunner {
     const reason = !this.session ? 'continuing an earlier session'
       : this.session.switched ? 'the previous task was finished by the backup provider'
         : 'the model was changed in settings';
-    this.session = createModelSession(settings, { notify: this.notify, seed: log ? { log, reason } : null, conversationId: this.id });
+    this.session = createModelSession(settings, { notify: this.notify, seed: log ? { log, reason } : null, conversationId: this.id, notebook: this.notebook });
     this.sessionKey = key;
   }
 
@@ -187,6 +189,6 @@ export class SessionRunner {
   async save() {
     clearTimeout(this.saveTimer);
     if (this.disposed) return;
-    await store.saveSession(this.id, { transcript: this.transcript, log: this.session?.log ?? this.storedLog, groupId: this.browser.groupId });
+    await store.saveSession(this.id, { transcript: this.transcript, log: this.session?.log ?? this.storedLog, groupId: this.browser.groupId, notebook: this.notebook.toJSON() });
   }
 }

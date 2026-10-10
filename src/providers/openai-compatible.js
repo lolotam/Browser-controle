@@ -6,6 +6,8 @@ import { MODEL_IDLE_MS, fetchModel, readSse } from '../lib/sse.js';
 import { requestJson } from '../lib/json.js';
 import { ProviderHttpError, readError, withRetry } from '../lib/retry.js';
 import { parseTextToolCalls } from './text-tool-calls.js';
+import { kindOf } from '../agent/tool-kinds.js';
+import { NOTEBOOK_HEADER, NOTE_SAVED_ARGS } from '../agent/notebook.js';
 
 const KEEP_FULL_OBSERVATIONS = 2;
 const TRIMMED_OBSERVATION_CHARS = 400;
@@ -216,11 +218,29 @@ export function createAccumulator() {
   };
 }
 
+/**
+ * Keeps the last two page observations and the latest notebook read in full; older
+ * ones are cut. Notes are short and never cut, and do not push observations out.
+ */
 export function compactMessages(messages) {
+  const names = new Map();
+  for (const m of messages) for (const tc of m.tool_calls ?? []) names.set(tc.id, tc.function?.name);
   const toolMessages = messages.filter((m) => m.role === 'tool');
-  for (const m of toolMessages.slice(0, -KEEP_FULL_OBSERVATIONS)) {
+  const kindOfResult = (m) => kindOf(names.get(m.tool_call_id));
+  const observations = toolMessages.filter((m) => !['bookkeeping', 'notes'].includes(kindOfResult(m)));
+  const notebookReads = toolMessages.filter((m) => kindOfResult(m) === 'notes');
+  for (const m of [...observations.slice(0, -KEEP_FULL_OBSERVATIONS), ...notebookReads.slice(0, -1)]) {
     if (typeof m.content === 'string' && m.content.length > TRIMMED_OBSERVATION_CHARS + 50) {
       m.content = `${m.content.slice(0, TRIMMED_OBSERVATION_CHARS)}\n…[older page state trimmed]`;
+    }
+  }
+  // A note's text is in the notebook copy of every later full observation, so once
+  // one follows, the call keeps only a marker and old notes no longer grow the context.
+  const lastNotebook = messages.findLastIndex((m) => m.role === 'tool' && typeof m.content === 'string' && m.content.includes(NOTEBOOK_HEADER));
+  const resultAt = new Map(messages.map((m, i) => [m.role === 'tool' ? m.tool_call_id : null, i]));
+  for (const m of messages) {
+    for (const tc of m.tool_calls ?? []) {
+      if (tc.function?.name === 'note' && resultAt.get(tc.id) < lastNotebook) tc.function.arguments = NOTE_SAVED_ARGS;
     }
   }
   const withImages = messages.filter((m) => m.role === 'user' && Array.isArray(m.content) && m.content.some((c) => c.type === 'image_url'));
