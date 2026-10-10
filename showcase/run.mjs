@@ -4,7 +4,7 @@
 // the final report, and metrics, into showcase-results/<run>/<model>/<task>/.
 // Finished runs are skipped, so an interrupted batch resumes where it stopped.
 //
-//   npm run showcase -- [--models a,b] [--tasks x,y] [--no-jev] [--out name] [--timeout 360] [--force]
+//   npm run showcase -- [--set basic|hard] [--models a,b] [--tasks x,y] [--no-jev] [--out name] [--timeout 360] [--force]
 //   npm run showcase:preflight          (checks every model with one real request)
 //   npm run showcase -- --mock          (self-test of this harness with a scripted local model, no keys)
 //
@@ -18,6 +18,9 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import { TASKS } from './tasks.mjs';
+import { TASKS as HARD_TASKS } from './tasks-hard.mjs';
+
+const TASK_SETS = { basic: TASKS, hard: HARD_TASKS };
 import { ENV_FILE, ENV_TEMPLATE, JEV, MODELS } from './models.mjs';
 import { COMPATIBLE_PRESETS } from '../src/lib/settings.js';
 import { findFfmpeg } from './ffmpeg.mjs';
@@ -32,7 +35,8 @@ const env = args.mock ? { MOCK_KEY: 'mock' } : loadEnv();
 const models = args.mock
   ? [{ id: 'mock', label: 'Scripted mock model', preset: 'custom', baseUrl: await startMockModel(), model: 'mock', env: 'MOCK_KEY' }]
   : MODELS.filter((m) => (!args.models || args.models.includes(m.id)) && env[m.env]);
-const tasks = TASKS.filter((t) => (args.mock ? t.id === 'books' : !args.tasks || args.tasks.includes(t.id)));
+if (!TASK_SETS[args.set]) throw new Error(`Unknown task set "${args.set}"; use ${Object.keys(TASK_SETS).join(' or ')}.`);
+const tasks = (args.mock ? TASKS : TASK_SETS[args.set]).filter((t) => (args.mock ? t.id === 'books' : !args.tasks || args.tasks.includes(t.id)));
 if (args.mock) { args.jev = false; args.out = 'mock-selftest'; args.force = true; }
 const skipped = MODELS.filter((m) => (!args.models || args.models.includes(m.id)) && !env[m.env]);
 if (skipped.length) console.log(`Skipping (no key in ${ENV_FILE}): ${skipped.map((m) => m.id).join(', ')}`);
@@ -43,7 +47,7 @@ if (args.preflight) {
 } else {
   const outDir = path.join(ROOT, 'showcase-results', args.out);
   fs.mkdirSync(outDir, { recursive: true });
-  fs.writeFileSync(path.join(outDir, 'run.json'), JSON.stringify({ started: new Date().toISOString(), jev: args.jev ? JEV : null, models, tasks: tasks.map(({ check, ...t }) => t) }, (k, v) => (k === 'env' ? undefined : v), 2));
+  fs.writeFileSync(path.join(outDir, 'run.json'), JSON.stringify({ started: new Date().toISOString(), set: args.set, jev: args.jev ? JEV : null, models, tasks: tasks.map(({ check, ...t }) => t) }, (k, v) => (k === 'env' ? undefined : v), 2));
   for (const model of models) {
     for (const task of tasks) {
       const dir = path.join(outDir, model.id, task.id);
@@ -257,7 +261,7 @@ function loadEnv() {
 }
 
 function parseArgs(argv) {
-  const out = { jev: true, timeout: 360, out: new Date().toISOString().slice(0, 10), force: false, preflight: false };
+  const out = { set: 'basic', jev: true, timeout: 360, out: new Date().toISOString().slice(0, 10), force: false, preflight: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--models') out.models = argv[++i].split(',');
@@ -267,6 +271,7 @@ function parseArgs(argv) {
     else if (a === '--timeout') out.timeout = Number(argv[++i]);
     else if (a === '--force') out.force = true;
     else if (a === '--preflight') out.preflight = true;
+    else if (a === '--set') out.set = argv[++i];
     else if (a === '--mock') out.mock = true;
   }
   return out;

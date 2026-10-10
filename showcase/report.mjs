@@ -12,6 +12,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { TASKS } from './tasks.mjs';
+import { TASKS as HARD_TASKS } from './tasks-hard.mjs';
 import { MODELS } from './models.mjs';
 import { findFfmpeg } from './ffmpeg.mjs';
 
@@ -22,9 +23,11 @@ const runDir = path.join(ROOT, 'showcase-results', runName);
 const webDir = path.join(runDir, 'web');
 fs.mkdirSync(webDir, { recursive: true });
 
+const meta = JSON.parse(fs.readFileSync(path.join(runDir, 'run.json'), 'utf8'));
+const TASK_LIST = meta.set === 'hard' ? HARD_TASKS : TASKS;
 const runs = [];
 for (const model of MODELS) {
-  for (const task of TASKS) {
+  for (const task of TASK_LIST) {
     const dir = path.join(runDir, model.id, task.id);
     const file = path.join(dir, 'result.json');
     if (!fs.existsSync(file)) continue;
@@ -56,13 +59,13 @@ for (const model of MODELS) {
 }
 
 const assets = fs.existsSync(path.join(runDir, 'assets.json')) ? JSON.parse(fs.readFileSync(path.join(runDir, 'assets.json'), 'utf8')) : {};
-const meta = JSON.parse(fs.readFileSync(path.join(runDir, 'run.json'), 'utf8'));
 const data = {
   started: meta.started,
   // What this run really used (null for --no-jev), not today's settings.
   jev: meta.jev ? `${meta.jev.model} via ${meta.jev.provider === 'vercel' ? 'Vercel AI Gateway' : meta.jev.provider}` : null,
   models: MODELS.filter((m) => runs.some((r) => r.model === m.id)).map(({ id, label }) => ({ id, label })),
-  tasks: TASKS.map(({ id, title, site, task }) => ({ id, title, site, task })),
+  set: meta.set ?? 'basic',
+  tasks: TASK_LIST.map(({ id, title, site, task }) => ({ id, title, site, task })),
   runs: runs.map((r) => ({ ...r, videos: Object.fromEntries(Object.entries(r.videos).map(([k, f]) => [k, assets[f] ? `/_blob/${assets[f]}` : null])) })),
 };
 const template = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'report-template.html'), 'utf8');
