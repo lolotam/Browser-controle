@@ -329,5 +329,8 @@ for (const n of [
   'A run passes when its final report contains every fact the task’s check requires. Live values (news, exchange rates, releases) are checked by shape rather than by value.',
   'Times include page loads, the fast layer and the live cursor’s movement, so they are what a user would wait.',
   'Left out after a connection check: OpenCode Zen’s free models (only usable inside the OpenCode app), Gemma 4 on OpenRouter (rate-limited), Inkling small (agent harnesses only) and Gemini 3.8 Flash (overloaded).',
+  DATA.manifest
+    ? `Run manifest ${DATA.manifest}, extension commit ${String(DATA.commit).slice(0, 7)}: every run in this report used the same code and settings.`
+    : 'Recorded before run manifests existed, so the code version of each run is not recorded.',
 ]) $('notes').append(el('li', { text: n }));
 </script>
