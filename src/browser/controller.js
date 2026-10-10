@@ -3,7 +3,7 @@
 // real user's, and work on sites that ignore synthetic DOM events.
 
 import { AgentOverlay } from './overlay.js';
-import { snapshotPage, elementAction, pageText, pageReadyState, devicePixelRatioOf } from './page-scripts.js';
+import { snapshotPage, elementAction, pageText, pageReadyState, devicePixelRatioOf, domSettled, documentIdOf } from './page-scripts.js';
 
 const CDP_VERSION = '1.3';
 const RESTRICTED = /^(chrome|chrome-extension|edge|about|devtools|view-source):|^https:\/\/chrome(webstore)?\.google\.com\/webstore/;
@@ -25,6 +25,12 @@ const KEYS = {
   PageDown: { code: 'PageDown', keyCode: 34 },
 };
 const MODIFIERS = { Alt: 1, Control: 2, Ctrl: 2, Meta: 4, Cmd: 4, Shift: 8 };
+// After an action, the page counts as settled once its content stops changing for
+// SETTLE_QUIET_MS (capped at SETTLE_MAX_MS), instead of a fixed pause: a static page
+// moves on at once, results that load by script still get time to appear.
+const SETTLE_QUIET_MS = 150;
+const SETTLE_FIRST_MS = 300; // until the first change: time for a started request to answer
+const SETTLE_MAX_MS = 800;
 
 /**
  * One controller per session. The session's tabs live in a Chrome tab group
@@ -222,7 +228,8 @@ export class BrowserController {
     const y = at?.y ?? vp.clientHeight / 2;
     const deltaY = Math.round(vp.clientHeight * 0.85 * screens);
     await this.cdp('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: 0, deltaY });
-    await delay(400);
+    await delay(150); // smooth scrolling and lazy-loaded content start after the wheel event
+    await this.settle();
   }
 
   /** JPEG screenshot of the viewport in CSS pixels, so coordinates match clickAt. */
@@ -251,7 +258,7 @@ export class BrowserController {
 
   /** Waits for any navigation the last action triggered to finish loading. */
   async waitForLoad({ expectNavigation = false, timeoutMs = 12000 } = {}) {
-    await delay(expectNavigation ? 400 : 250);
+    await delay(expectNavigation ? 400 : 120); // long enough for a click to start a navigation
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const tab = await this.currentTab();
@@ -266,8 +273,25 @@ export class BrowserController {
       }
       await delay(250);
     }
-    await delay(300);
+    await this.settle();
     await this.overlay.frame(); // a navigation wipes the overlay; bring it back
+  }
+
+  /** The current document's identity, or null when the page cannot be read. */
+  async documentId() {
+    try {
+      return await this.inject(documentIdOf);
+    } catch {
+      return null;
+    }
+  }
+
+  async settle() {
+    try {
+      await this.inject(domSettled, [SETTLE_QUIET_MS, SETTLE_MAX_MS, SETTLE_FIRST_MS]);
+    } catch {
+      // Restricted or mid-navigation page: nothing to wait for.
+    }
   }
 }
 

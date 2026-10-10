@@ -54,7 +54,17 @@ export function formatSnapshot(snap) {
 
 export function createToolExecutor(browser, { askUser, signal = null }) {
   const overlay = browser.overlay;
+  // Set per call by execute: inside a batch, an action that left the page where it
+  // was skips the snapshot (the batch's last action reports the page state).
+  // The page counts as changed when its URL or its document is new: a form post or
+  // a reload can replace the document at the same URL, and then indexes are stale.
+  let call = { brief: false, at: null, pageChanged: false };
+  const where = async () => [(await browser.currentTab().catch(() => null))?.url ?? null, await browser.documentId?.()].join(' ');
   const observe = async (prefix) => {
+    if (call.brief) {
+      if ((await where()) === call.at) return `${prefix} (Page state follows the last action of this turn.)`;
+      call.pageChanged = true;
+    }
     try {
       return `${prefix}\n\n${formatSnapshot(await browser.snapshot())}`;
     } catch (err) {
@@ -164,12 +174,16 @@ export function createToolExecutor(browser, { askUser, signal = null }) {
     ask_user: async ({ question }) => `User answered: ${await askUser(question)}`,
   };
 
-  return async function execute(name, args) {
+  /** `observe: false` marks an action that is not the last of its turn's batch. */
+  return async function execute(name, args, { observe: full = true } = {}) {
     const handler = handlers[name];
     if (!handler) return { output: `Unknown tool "${name}".`, isError: true };
+    const brief = !full && name !== 'read_page';
+    call = { brief, at: brief ? await where() : null, pageChanged: false };
     try {
       const result = await handler(args ?? {});
-      return typeof result === 'string' ? { output: result } : result;
+      const out = typeof result === 'string' ? { output: result } : result;
+      return call.pageChanged ? { ...out, pageChanged: true } : out;
     } catch (err) {
       return { output: `Error: ${err.message}`, isError: true };
     }

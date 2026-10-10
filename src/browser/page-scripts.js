@@ -179,6 +179,35 @@ export function pageText(start, length) {
   return { total: text.length, start, text: text.slice(start, start + length) };
 }
 
+/**
+ * Resolves once the page's content has not changed for `quietMs`, or after `maxMs`
+ * at most. Until the first change it waits `firstQuietMs`, long enough for a click
+ * that starts a request (search, autocomplete) to show its result. Attribute
+ * changes (animations, hover styles) do not count, so busy pages end at the cap.
+ */
+export function domSettled(quietMs, maxMs, firstQuietMs = quietMs) {
+  return new Promise((resolve) => {
+    let timer = setTimeout(done, firstQuietMs);
+    const cap = setTimeout(done, maxMs);
+    const observer = new MutationObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(done, quietMs);
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    function done() {
+      observer.disconnect();
+      clearTimeout(timer);
+      clearTimeout(cap);
+      resolve(true);
+    }
+  });
+}
+
+/** Identifies the current document: a new one (reload, form post) gets a new value even at the same URL. */
+export function documentIdOf() {
+  return String(performance.timeOrigin);
+}
+
 export function pageReadyState() {
   return { readyState: document.readyState, url: location.href };
 }

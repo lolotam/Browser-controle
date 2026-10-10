@@ -5,6 +5,9 @@
 
 import { escalationMessage } from '../fast/fast-layer.js';
 
+const SKIPPED_PAGE_CHANGED = 'Not executed: the page changed after an earlier action in this turn. Decide again from the new page state.';
+const SKIPPED_AFTER_ERROR = 'Not executed: an earlier action in this turn failed. Decide again.';
+const SKIPPED_AFTER_ASK = 'Not executed: you asked the user a question in this turn. Read the answer, then decide again.';
 const SUMMARY_PROMPT = 'You have reached the step limit. Stop using tools and write the final report now: what was done, all information collected with sources, and what remains.';
 
 export async function runAgent({ session, execute, task, maxSteps, signal, emit, fastLayer = null }) {
@@ -57,12 +60,24 @@ export async function runAgent({ session, execute, task, maxSteps, signal, emit,
           emit({ type: 'final', report: call.args.report ?? '', success: call.args.success !== false });
           return;
         }
+        // Several actions in one turn: only the last returns the page state, which
+        // saves a full page snapshot per action; an earlier one reports it only if
+        // the page changed, and then the rest of the batch is not run.
+        const last = !pending.some((c) => c.name !== 'done');
         emit({ type: 'tool-start', step, name: call.name, args: call.args });
-        const result = await execute(call.name, call.args);
+        const result = await execute(call.name, call.args, { observe: last });
         emit({ type: 'tool-end', step, name: call.name, ok: !result.isError, summary: firstLine(result.output) });
         session.addToolResult(call.id, result.output, result.images ?? []);
         fast?.recordLlmAction(call.name, call.args);
         llmHasSeenPage = true;
+        // The rest of the turn waits for the model to look again when an action
+        // failed (a pending done must not report success), when the user was asked
+        // something (an approval must be read before anything it governs runs), or
+        // when the page changed under an earlier action.
+        const reason = result.isError ? SKIPPED_AFTER_ERROR
+          : call.name === 'ask_user' ? SKIPPED_AFTER_ASK
+            : result.pageChanged ? SKIPPED_PAGE_CHANGED : null;
+        if (reason) for (const skipped of pending.splice(0)) session.addToolResult(skipped.id, reason);
       }
     } finally {
       for (const call of pending) session.addToolResult(call.id, 'Not executed: the run ended before this call.');
