@@ -130,6 +130,36 @@ test('a turn with several actions runs them in order and only the last observes 
   assert.deepEqual(session.results.map((r) => r.id), ['1', '2', '3', '4']);
 });
 
+test('asking the user, or a failed action, defers the rest of the turn, done included', async () => {
+  for (const [first, reason] of [[['ask_user', { question: 'Buy it?' }], /asked the user/], [['click', { index: 0 }], /failed/]]) {
+    const session = scriptedSession([
+      { text: '', toolCalls: [call('1', ...first), call('2', 'click', { index: 9 }), call('3', 'done', { report: 'bought', success: true })] },
+      { text: '', toolCalls: [call('4', 'done', { report: 'ok', success: true })] },
+    ]);
+    const executed = [];
+    const events = [];
+    await runAgent({
+      session, task: 't', maxSteps: 5, emit: (e) => events.push(e),
+      execute: async (name) => {
+        executed.push(name);
+        return name === 'ask_user' ? { output: 'User answered: no' } : { output: 'Error: x', isError: true };
+      },
+    });
+    assert.deepEqual(executed, [first[0]]);
+    assert.match(session.results[1].output, reason);
+    assert.match(session.results[2].output, reason);
+    assert.equal(events.at(-1).report, 'ok');
+  }
+  // A failed action followed only by done must not report success either.
+  const session = scriptedSession([
+    { text: '', toolCalls: [call('1', 'click', { index: 0 }), call('2', 'done', { report: 'done!', success: true })] },
+    { text: '', toolCalls: [call('3', 'done', { report: 'could not submit', success: false })] },
+  ]);
+  const events = [];
+  await runAgent({ session, task: 't', maxSteps: 5, emit: (e) => events.push(e), execute: async () => ({ output: 'Error: gone', isError: true }) });
+  assert.equal(events.at(-1).report, 'could not submit');
+});
+
 test('a batch stops when an action changes the page or fails, and every call still gets a result', async () => {
   for (const [first, reason] of [[{ output: 'moved', pageChanged: true }, /page changed/], [{ output: 'Error: x', isError: true }, /failed/]]) {
     const session = scriptedSession([

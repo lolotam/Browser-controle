@@ -3,7 +3,7 @@
 // real user's, and work on sites that ignore synthetic DOM events.
 
 import { AgentOverlay } from './overlay.js';
-import { snapshotPage, elementAction, pageText, pageReadyState, devicePixelRatioOf, domSettled } from './page-scripts.js';
+import { snapshotPage, elementAction, pageText, pageReadyState, devicePixelRatioOf, domSettled, documentIdOf } from './page-scripts.js';
 
 const CDP_VERSION = '1.3';
 const RESTRICTED = /^(chrome|chrome-extension|edge|about|devtools|view-source):|^https:\/\/chrome(webstore)?\.google\.com\/webstore/;
@@ -29,7 +29,8 @@ const MODIFIERS = { Alt: 1, Control: 2, Ctrl: 2, Meta: 4, Cmd: 4, Shift: 8 };
 // SETTLE_QUIET_MS (capped at SETTLE_MAX_MS), instead of a fixed pause: a static page
 // moves on at once, results that load by script still get time to appear.
 const SETTLE_QUIET_MS = 150;
-const SETTLE_MAX_MS = 600;
+const SETTLE_FIRST_MS = 300; // until the first change: time for a started request to answer
+const SETTLE_MAX_MS = 800;
 
 /**
  * One controller per session. The session's tabs live in a Chrome tab group
@@ -276,9 +277,18 @@ export class BrowserController {
     await this.overlay.frame(); // a navigation wipes the overlay; bring it back
   }
 
+  /** The current document's identity, or null when the page cannot be read. */
+  async documentId() {
+    try {
+      return await this.inject(documentIdOf);
+    } catch {
+      return null;
+    }
+  }
+
   async settle() {
     try {
-      await this.inject(domSettled, [SETTLE_QUIET_MS, SETTLE_MAX_MS]);
+      await this.inject(domSettled, [SETTLE_QUIET_MS, SETTLE_MAX_MS, SETTLE_FIRST_MS]);
     } catch {
       // Restricted or mid-navigation page: nothing to wait for.
     }

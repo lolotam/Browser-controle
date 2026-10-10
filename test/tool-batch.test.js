@@ -28,6 +28,16 @@ test('an action inside a batch that changes the page reports the new page and fl
   assert.match(out.output, /URL: https:\/\/a\.test\/results/);
 });
 
+test('a new document at the same URL (reload, form post) counts as a page change', async () => {
+  const browser = fakeBrowser();
+  let doc = 'doc-1';
+  browser.documentId = async () => doc;
+  browser.pressKey = async () => { doc = 'doc-2'; };
+  const execute = createToolExecutor(browser, { askUser: async () => '' });
+  const out = await execute('press_key', { key: 'Enter' }, { observe: false });
+  assert.equal(out.pageChanged, true);
+});
+
 test('the last action of a turn, and read_page, always report the page', async () => {
   const execute = createToolExecutor(fakeBrowser(), { askUser: async () => '' });
   assert.match((await execute('press_key', { key: 'Tab' })).output, /Interactive elements/);
