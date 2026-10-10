@@ -6,6 +6,7 @@ import { createProviderForm } from './provider-form.js';
 import { bindTestButton } from './test-button.js';
 import { FEEDBACK_FORM_ID, afterDismissal, afterRating, sendFeedback, shouldAskForRating } from '../lib/feedback.js';
 import { googleAccount, signInWithGoogle, signOutOfGoogle } from '../lib/google-account.js';
+import { RECOMMENDED_SETUP, recommendedSlots } from '../lib/settings.js';
 
 const $ = (id) => document.getElementById(id);
 const request = async (type, payload = {}) => {
@@ -14,7 +15,7 @@ const request = async (type, payload = {}) => {
   return res.result;
 };
 
-const ui = { running: false, question: null, liveText: null, liveReasoning: null, trace: null, steps: new Map(), replayed: false, notices: [] };
+const ui = { running: false, question: null, liveText: null, liveReasoning: null, trace: null, steps: new Map(), replayed: false, notices: [], stats: newStats() };
 const MAX_NOTICES = 3;
 let settings = null;
 let presets = {};
@@ -78,6 +79,16 @@ function onEvent(event) {
       break;
     case 'user':
       add('msg user', event.text);
+      if (!event.answer) ui.stats = newStats(event.at); // an answer to ask_user is part of the task
+      break;
+    case 'turn-end':
+      addTurn(event);
+      break;
+    case 'usage':
+      if (event.source === 'fast' && event.usage) {
+        ui.stats.fastIn += event.usage.input;
+        ui.stats.fastOut += event.usage.output;
+      }
       break;
     case 'thinking':
       ui.liveText = null;
@@ -109,11 +120,13 @@ function onEvent(event) {
       scrollDown();
       break;
     case 'tool-end': {
-      const row = ui.steps.get(event.step + event.name);
+      // Sessions saved before call ids existed match by step and name.
+      const row = ui.steps.get(event.callId ?? event.step + event.name);
       if (row) {
         row.classList.toggle('fail', !event.ok);
         row.querySelector('.mark').textContent = event.ok ? '✓' : '✗';
         row.title = event.summary;
+        if (Number.isFinite(event.ms)) row.append(span('time', formatDuration(event.ms)));
       }
       break;
     }
@@ -128,6 +141,8 @@ function onEvent(event) {
       const heading = document.createElement('h3');
       heading.textContent = t(event.success ? 'report.final' : 'report.partial');
       node.prepend(heading);
+      const totals = totalsLine(event.at);
+      if (totals) node.append(totals);
       if (ui.replayed) askForRating(); // live finals only, not the history replayed on open
       break;
     }
@@ -183,7 +198,7 @@ function traceBlock() {
   return ui.trace;
 }
 
-function addStep({ step, name, args, fast }) {
+function addStep({ step, callId, name, args, fast }) {
   const row = document.createElement('div');
   row.className = fast ? 'step fast' : 'step';
   const compact = JSON.stringify(args ?? {}).replace(/^\{|\}$/g, '');
@@ -191,8 +206,53 @@ function addStep({ step, name, args, fast }) {
   row.querySelector('.name').textContent = `${step}. ${name}`;
   row.querySelector('.args').textContent = compact;
   traceBlock().append(row);
-  ui.steps.set(step + name, row);
+  ui.steps.set(callId ?? step + name, row);
   scrollDown();
+}
+
+function newStats(start = null) {
+  return { start, input: 0, output: 0, missing: 0, turns: 0, fastIn: 0, fastOut: 0 };
+}
+
+function span(className, text) {
+  return Object.assign(document.createElement('span'), { className, textContent: text });
+}
+
+const number = (n) => n.toLocaleString('en-US');
+
+/** 0.4s, 12.3s, 2m 05s. */
+function formatDuration(ms) {
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const s = Math.round(ms / 1000);
+  return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
+}
+
+/** One model turn in the trace: who answered, how long it thought, and its tokens. */
+function addTurn({ model, ms, retryWaitMs, usage }) {
+  ui.stats.turns += 1;
+  if (usage) {
+    ui.stats.input += usage.input;
+    ui.stats.output += usage.output;
+  } else {
+    ui.stats.missing += 1;
+  }
+  const row = document.createElement('div');
+  row.className = 'step turn';
+  row.append(span('mark', '◆'), span('name', model || 'model'));
+  row.append(span('args', [usage ? t('stats.tokens', { input: number(usage.input), output: number(usage.output) }) : '', retryWaitMs ? t('stats.retryWait', { time: formatDuration(retryWaitMs) }) : ''].filter(Boolean).join(' · ')));
+  if (Number.isFinite(ms)) row.append(span('time', formatDuration(ms)));
+  traceBlock().append(row);
+  scrollDown();
+}
+
+/** Under the final report: the whole task's time and tokens. */
+function totalsLine(end) {
+  const { start, input, output, missing, turns, fastIn, fastOut } = ui.stats;
+  if (!start || !end) return null; // sessions saved before timings existed
+  const parts = [t('stats.total', { time: formatDuration(end - start) })];
+  if (turns > missing) parts.push(t('stats.totalTokens', { input: number(input), output: number(output) }) + (missing ? ` ${t('stats.partial')}` : ''));
+  if (fastIn || fastOut) parts.push(t('stats.fast', { input: number(fastIn), output: number(fastOut) }));
+  return Object.assign(document.createElement('div'), { className: 'totals', textContent: parts.join(' · ') });
 }
 
 function clearMessages() {
@@ -799,11 +859,43 @@ function fillForm() {
   $('vision').checked = settings.vision;
   $('allowJavascript').checked = settings.allowJavascript;
   $('showCursor').checked = settings.showCursor;
+  $('notify').checked = false;
+  $('notifyNote').hidden = true;
+  // On only while Chrome still grants the permission: it can be revoked outside the panel.
+  if (settings.notify) chrome.permissions.contains({ permissions: ['notifications'] }).then((granted) => { $('notify').checked = granted; });
   $('replyLangEnabled').checked = settings.replyLanguage.enabled;
   $('replyLang').value = settings.replyLanguage.language;
   syncReplyLanguage();
   fillFastForm(settings.fast);
+  syncRecommended();
 }
+
+// The tested free setup: offered up front until a provider is set up, then behind a link.
+function syncRecommended(open = false) {
+  const configured = authStatus.connected || Object.values(settings.keys ?? {}).some(Boolean) || Boolean(settings.compatible.apiKey);
+  $('recommended').hidden = configured && !open;
+  $('showRecommended').hidden = !$('recommended').hidden;
+  $('recommendedNote').hidden = true;
+}
+
+$('keyLinkMain').href = RECOMMENDED_SETUP.main.keyUrl;
+$('keyLinkBackup').href = RECOMMENDED_SETUP.backup.keyUrl;
+$('showRecommended').addEventListener('click', () => syncRecommended(true));
+
+// Fills both provider forms through their own fill; keys go in the existing key
+// fields, so the shared key store sees them. Nothing is saved until Save.
+$('useRecommended').addEventListener('click', () => {
+  const { main, fallback } = recommendedSlots(readForm(), presets);
+  mainForm.fill(main);
+  fallbackForm.fill(fallback);
+  $('fallbackEnabled').checked = true;
+  syncFallback();
+  mainForm.loadModels();
+  fallbackForm.loadModels();
+  $('recommendedNote').hidden = false;
+  const empty = [$('mainProvider'), $('fallbackProvider')].map((root) => root.querySelector('[data-field="apiKey"]')).find((input) => !input.value);
+  empty?.focus();
+});
 
 function readForm() {
   const next = structuredClone(settings);
@@ -814,6 +906,7 @@ function readForm() {
   next.vision = $('vision').checked;
   next.allowJavascript = $('allowJavascript').checked;
   next.showCursor = $('showCursor').checked;
+  next.notify = $('notify').checked;
   next.replyLanguage = { enabled: $('replyLangEnabled').checked, language: $('replyLang').value };
   next.keys = keyStore.snapshot();
   return next;
@@ -825,6 +918,22 @@ function syncReplyLanguage() {
 }
 
 $('replyLangEnabled').addEventListener('change', syncReplyLanguage);
+
+// The permission is asked for from the click itself (Chrome needs the gesture), and
+// given back when the switch goes off. Notifications need both the switch and it.
+$('notify').addEventListener('change', async () => {
+  const box = $('notify');
+  $('notifyNote').hidden = true;
+  if (box.checked) {
+    const granted = await chrome.permissions.request({ permissions: ['notifications'] }).catch(() => false);
+    if (!granted) {
+      box.checked = false;
+      $('notifyNote').hidden = false;
+    }
+  } else {
+    await chrome.permissions.remove({ permissions: ['notifications'] }).catch(() => {});
+  }
+});
 
 function syncFallback() {
   $('fallbackProvider').hidden = !$('fallbackEnabled').checked;
@@ -1050,6 +1159,7 @@ function activeModel() {
 
 function showAuth(status) {
   authStatus = status;
+  if (settings) syncRecommended();
   $('authStatus').textContent = status.connected
     ? t('auth.connected', { who: `${status.email ?? 'ChatGPT'}${status.planType ? ` — ${status.planType}` : ''}` })
     : t('auth.disconnected');

@@ -28,6 +28,11 @@ export class FallbackSession {
     this.openCalls = new Map();
   }
 
+  /** Which model is answering now: the backup after a switch. */
+  get model() {
+    return (this.switched ? this.labels.backup : this.labels.primary) ?? '';
+  }
+
   addUserMessage(text, images = []) {
     if (this.log.task === null) this.log.task = text;
     else this.log.notes.push(text);
@@ -50,7 +55,11 @@ export class FallbackSession {
       turn = await this.active.next(options);
     } catch (err) {
       if (err?.name === 'AbortError' || this.switched || !this.createBackup) throw err;
+      const primary = this.active;
       turn = await this.switchToBackup(err, options);
+      // The primary's pauses before it gave up count as retry waits, not model time.
+      const waited = (turn.retryWaitMs ?? 0) + (primary.retryWaitMs ?? 0);
+      if (waited) turn = { ...turn, retryWaitMs: waited };
     }
     for (const call of turn.toolCalls ?? []) this.openCalls.set(call.id, call);
     return turn;

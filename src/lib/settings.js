@@ -1,18 +1,18 @@
 // User settings persisted in chrome.storage.local.
 
-import { shareKeys } from './keys.js';
+import { keyGroup, shareKeys } from './keys.js';
 
 // Main model and backup providers (both use this list). thinkingStyle 'none' sends
 // no reasoning parameter, for APIs whose models reject reasoning_effort; 'gemini'
 // offers no Off, because Gemini 3 thinking cannot be turned off.
 export const COMPATIBLE_PRESETS = {
-  openai: { label: 'OpenAI API key', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5', thinkingStyle: 'reasoning_effort' },
-  gemini: { label: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.8-flash', thinkingStyle: 'gemini' },
-  xai: { label: 'xAI (Grok)', baseUrl: 'https://api.x.ai/v1', model: 'grok-4', thinkingStyle: 'reasoning_effort' },
-  deepseek: { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', thinkingStyle: 'none' },
+  openai: { label: 'OpenAI API key', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5', thinkingStyle: 'reasoning_effort', usage: true },
+  gemini: { label: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.8-flash', thinkingStyle: 'gemini', usage: true },
+  xai: { label: 'xAI (Grok)', baseUrl: 'https://api.x.ai/v1', model: 'grok-4', thinkingStyle: 'reasoning_effort', usage: true },
+  deepseek: { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', thinkingStyle: 'none', usage: true },
   // textToolCalls: its models were seen writing tool calls as text (showcase, 2026-10-10).
-  nvidia: { label: 'NVIDIA NIM', baseUrl: 'https://integrate.api.nvidia.com/v1', model: 'nvidia/nemotron-3-super-120b-a12b', thinkingStyle: 'none', textToolCalls: true },
-  openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-5', thinkingStyle: 'reasoning_effort' },
+  nvidia: { label: 'NVIDIA NIM', baseUrl: 'https://integrate.api.nvidia.com/v1', model: 'nvidia/nemotron-3-super-120b-a12b', thinkingStyle: 'none', textToolCalls: true, usage: true },
+  openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-5', thinkingStyle: 'reasoning_effort', usage: true },
   'opencode-zen': { label: 'OpenCode Zen', baseUrl: 'https://opencode.ai/zen/v1', model: 'glm-5.3', thinkingStyle: 'none' },
   'opencode-go': { label: 'OpenCode Go', baseUrl: 'https://opencode.ai/zen/go/v1', model: 'glm-5.3', thinkingStyle: 'none' },
   'zai-coding': { label: 'Z.ai GLM Coding Plan', baseUrl: 'https://api.z.ai/api/coding/paas/v4', model: 'glm-4.6', thinkingStyle: 'glm' },
@@ -35,6 +35,29 @@ export function chatModelsFor(presetId, models) {
 }
 
 // Fast-layer providers serve decision models (Jev).
+// The free pairing that did best in the Postora showcase (October 2026): NVIDIA's
+// Nemotron 3 Super as the main model, Apodex Mini on OpenRouter as the backup.
+export const RECOMMENDED_SETUP = {
+  main: { preset: 'nvidia', model: 'nvidia/nemotron-3-super-120b-a12b', keyUrl: 'https://build.nvidia.com/settings/api-keys' },
+  backup: { preset: 'openrouter', model: 'apodex/apodex-1.1-mini:free', keyUrl: 'https://openrouter.ai/settings/keys' },
+};
+
+/**
+ * The main and backup slots for the recommended setup, built on a settings draft:
+ * keys already stored for those providers are kept, the rest of the draft is untouched.
+ */
+export function recommendedSlots(draft, presets = COMPATIBLE_PRESETS) {
+  const slot = (base, { preset, model }) => ({
+    ...base,
+    provider: 'compatible',
+    compatible: { ...base.compatible, preset, baseUrl: presets[preset].baseUrl, apiKey: draft.keys?.[keyGroup(preset)] ?? '', model, effort: '' },
+  });
+  return {
+    main: slot(draft, RECOMMENDED_SETUP.main),
+    fallback: { ...slot(draft.fallback, RECOMMENDED_SETUP.backup), enabled: true },
+  };
+}
+
 export const FAST_PRESETS = {
   typesafe: { label: 'TypeSafe Jev', baseUrl: 'https://api.typesafe.ai', model: 'jev-latest', minProb: 0.6, decision: true },
   vercel: { label: 'Vercel AI Gateway', baseUrl: 'https://ai-gateway.vercel.sh/v1', model: 'typesafe-ai/jev', minProb: 0.6, decision: true },
@@ -65,6 +88,7 @@ export const DEFAULT_SETTINGS = {
   allowJavascript: false,
   // The agent's cursor, captions and Stop bar drawn on the page it controls.
   showCursor: true,
+  notify: false, // desktop notifications; also needs the optional permission
   uiLanguage: 'auto',
   // Off: the agent replies in the language the task is written in.
   replyLanguage: { enabled: false, language: '' },

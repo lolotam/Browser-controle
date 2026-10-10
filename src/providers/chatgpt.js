@@ -87,6 +87,7 @@ export class ChatgptSession {
       this.pendingImages = [];
     }
     compactInput(this.input);
+    this.retryWaitMs = 0;
 
     const response = await this.post(toolChoice, signal);
     const items = [];
@@ -121,7 +122,7 @@ export class ChatgptSession {
     }
 
     this.input.push(...items.map(withoutId));
-    return parseOutput(items, usage);
+    return { ...parseOutput(items, usage), retryWaitMs: this.retryWaitMs };
   }
 
   async post(toolChoice, signal, { refreshed = false, deadline = Date.now() + MODEL_IDLE_MS } = {}) {
@@ -159,7 +160,7 @@ export class ChatgptSession {
         }
         if (res.ok) return res;
         throw new ProviderHttpError(await readError(res));
-      }, { signal, deadline, provider: 'chatgpt', notify: this.notify });
+      }, { signal, deadline, provider: 'chatgpt', notify: this.notify, onWait: (ms) => { this.retryWaitMs += ms; } });
     } catch (err) {
       if (!(err instanceof ProviderHttpError)) throw err;
       if (err.status === 401 && !refreshed) return this.post(toolChoice, signal, { refreshed: true, deadline });

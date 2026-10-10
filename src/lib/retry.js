@@ -86,10 +86,10 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
  * attempts run out, or the shared deadline would pass. `attempt` covers the
  * request up to its response headers only, so a started stream is never replayed.
  */
-export async function withRetry(attempt, { signal, deadline = Date.now() + MODEL_IDLE_MS, provider = '', notify = null, wait = sleep, random = Math.random } = {}) {
+export async function withRetry(attempt, { signal, deadline = Date.now() + MODEL_IDLE_MS, provider = '', notify = null, wait = sleep, random = Math.random, onWait = null } = {}) {
   let notice = null; // id of the "trying again" notice, withdrawn once the retries end
   try {
-    return await retryLoop(attempt, { signal, deadline, provider, wait, random, onPause: (err) => {
+    return await retryLoop(attempt, { signal, deadline, provider, wait, random, onWait, onPause: (err) => {
       if (notice !== null || !notify) return;
       notice = notify({ level: 'warning', kind: 'retrying', code: err.status === 429 ? 'rate-limit' : 'server', reason: `HTTP ${err.status ?? 'network'}`, detail: String(err.detail ?? err.message ?? '').slice(0, 300) }) ?? false;
     } });
@@ -98,7 +98,7 @@ export async function withRetry(attempt, { signal, deadline = Date.now() + MODEL
   }
 }
 
-async function retryLoop(attempt, { signal, deadline, provider, wait, random, onPause }) {
+async function retryLoop(attempt, { signal, deadline, provider, wait, random, onWait, onPause }) {
   for (let n = 1; ; n += 1) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new DeadlineError(MODEL_IDLE_MS);
@@ -112,6 +112,7 @@ async function retryLoop(attempt, { signal, deadline, provider, wait, random, on
       // A provider asking for longer than we can wait: hand over now instead of retrying early.
       if (pause > Math.min(MAX_WAIT_MS, deadline - Date.now())) throw err;
       if (pause > NOTICE_AFTER_MS) onPause(err);
+      onWait?.(pause); // shown apart from the model's own time
       await wait(pause, signal);
     }
   }

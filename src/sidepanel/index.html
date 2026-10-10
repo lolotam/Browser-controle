@@ -112,6 +112,19 @@
     </div>
 
     <div id="panelModels" role="tabpanel" aria-labelledby="tabModels">
+      <div class="card recommended" id="recommended" hidden>
+        <strong data-i18n="setup.title"></strong>
+        <p class="muted" data-i18n="setup.desc"></p>
+        <div class="row between">
+          <button type="button" class="primary" id="useRecommended" data-i18n="setup.use"></button>
+          <span class="links">
+            <a id="keyLinkMain" target="_blank" rel="noopener" data-i18n="setup.keyNvidia"></a>
+            <a id="keyLinkBackup" target="_blank" rel="noopener" data-i18n="setup.keyOpenrouter"></a>
+          </span>
+        </div>
+        <p class="muted" id="recommendedNote" data-i18n="setup.applied" hidden></p>
+      </div>
+      <button type="button" class="link" id="showRecommended" data-i18n="setup.show" hidden></button>
       <fieldset class="frame" data-kind="main">
         <legend><span class="frame-dot"></span><span data-i18n="frame.main"></span></legend>
         <div id="mainProvider" class="fields">
@@ -219,6 +232,8 @@
         <label class="check"><input type="checkbox" id="vision" /> <span data-i18n="settings.vision"></span></label>
         <label class="check"><input type="checkbox" id="allowJavascript" /> <span data-i18n="settings.javascript"></span></label>
         <label class="check"><input type="checkbox" id="showCursor" /> <span data-i18n="settings.showCursor"></span></label>
+        <label class="check"><input type="checkbox" id="notify" /> <span data-i18n="settings.notify"></span></label>
+        <p class="muted" id="notifyNote" data-i18n="settings.notifyDenied" hidden></p>
       </div>
 
       <div class="card">

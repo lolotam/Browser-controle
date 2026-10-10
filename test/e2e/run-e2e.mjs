@@ -231,6 +231,7 @@ function startServer(handlers) {
           const chunks = [
             { choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name, arguments: '' } }] } }] },
             { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify(args) } }] } }] },
+            { choices: [], usage: { prompt_tokens: 100, completion_tokens: 10 } },
           ];
           res.writeHead(200, { 'Content-Type': 'text/event-stream' });
           for (const c of chunks) res.write(`data: ${JSON.stringify(c)}\n\n`);
@@ -453,6 +454,8 @@ async function main() {
         check: ({ report }) => [
           ...(report.includes('screenshot seen: true') ? [] : ['screenshot never reached the model']),
           ...(report.includes('dates seen: true') ? [] : ['shadow-DOM release dates never reached the model']),
+          // Seven model turns of 100 + 10 tokens, and a time for the whole task.
+          ...(/Took \d+\.\ds · 700 tokens in · 70 out/.test(report) ? [] : [`expected task totals under the report, got: ${report.split('\n').at(-1)}`]),
         ],
       })),
       ...(await runScenario(context, extensionId, {

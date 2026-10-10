@@ -5,6 +5,7 @@
 
 import { escalationMessage } from '../fast/fast-layer.js';
 import { kindOf } from './tool-kinds.js';
+import { normalizeUsage } from '../lib/usage.js';
 
 const SKIPPED_PAGE_CHANGED = 'Not executed: the page changed after an earlier action in this turn. Decide again from the new page state.';
 const SKIPPED_AFTER_ERROR = 'Not executed: an earlier action in this turn failed. Decide again.';
@@ -22,14 +23,19 @@ export async function runAgent({ session, execute, task, maxSteps, signal, emit,
     throwIfAborted(signal);
 
     if (fast) {
+      const started = Date.now();
       const outcome = await fast.step({ signal });
       throwIfAborted(signal);
+      const fastUsage = normalizeUsage(outcome.usage);
+      if (fastUsage) emit({ type: 'usage', source: 'fast', usage: fastUsage });
       if (outcome.kind === 'off') {
         fast = null;
         emit({ type: 'fast-handoff', reason: 'Fast layer failed 3 times; continuing with the main model only' });
       } else if (outcome.kind === 'acted') {
-        emit({ type: 'tool-start', step, name: outcome.tool, args: outcome.args, fast: true });
-        emit({ type: 'tool-end', step, name: outcome.tool, ok: !outcome.result.isError, summary: firstLine(outcome.result.output) });
+        // The fast layer decides and acts in one go: its step covers both.
+        const callId = `fast-${step}`;
+        emit({ type: 'tool-start', step, callId, name: outcome.tool, args: outcome.args, fast: true });
+        emit({ type: 'tool-end', step, callId, name: outcome.tool, ok: !outcome.result.isError, summary: firstLine(outcome.result.output), ms: Date.now() - started });
         fastActions.push(`${outcome.label} → ${firstLine(outcome.result.output)}`);
         continue;
       } else {
@@ -40,9 +46,9 @@ export async function runAgent({ session, execute, task, maxSteps, signal, emit,
       }
     }
 
-    emit({ type: 'thinking', step });
-    const turn = await session.next({ signal, onEvent: emit });
-    if (turn.usage) emit({ type: 'usage', usage: turn.usage });
+    const turnId = `turn-${step}`;
+    emit({ type: 'thinking', step, turnId });
+    const turn = await timedTurn(session, { signal, onEvent: emit }, turnId, emit);
     if (turn.text) emit({ type: 'assistant-text', text: turn.text });
 
     if (!turn.toolCalls.length) {
@@ -69,9 +75,10 @@ export async function runAgent({ session, execute, task, maxSteps, signal, emit,
         // A boundary tool (ask_user, choose_suggestion) always reports in full and ends the batch.
         const boundary = kindOf(call.name) === 'boundary';
         const last = boundary || !pending.some((c) => ['observe', 'boundary'].includes(kindOf(c.name)));
-        emit({ type: 'tool-start', step, name: call.name, args: call.args });
+        emit({ type: 'tool-start', step, callId: call.id, name: call.name, args: call.args });
+        const started = Date.now();
         const result = await execute(call.name, call.args, { observe: last });
-        emit({ type: 'tool-end', step, name: call.name, ok: !result.isError, summary: firstLine(result.output) });
+        emit({ type: 'tool-end', step, callId: call.id, name: call.name, ok: !result.isError, summary: firstLine(result.output), ms: Date.now() - started });
         session.addToolResult(call.id, result.output, result.images ?? []);
         fast?.recordLlmAction(call.name, call.args);
         llmHasSeenPage = true;
@@ -92,8 +99,24 @@ export async function runAgent({ session, execute, task, maxSteps, signal, emit,
 
   const unseen = fastActions.length ? `\n\nSteps executed by the fast layer you have not seen yet:\n${fastActions.join('\n')}` : '';
   session.addUserMessage(SUMMARY_PROMPT + unseen);
-  const summary = await session.next({ signal, onEvent: emit, toolChoice: 'none' });
+  emit({ type: 'thinking', step: maxSteps + 1, turnId: 'summary' });
+  const summary = await timedTurn(session, { signal, onEvent: emit, toolChoice: 'none' }, 'summary', emit);
   emit({ type: 'final', report: summary.text || 'Step limit reached before the task was finished.', success: false });
+}
+
+/**
+ * One model turn, reported with how long the model took (retry pauses shown apart),
+ * its token usage when the provider gave one, and which model answered.
+ */
+async function timedTurn(session, options, turnId, emit) {
+  const started = Date.now();
+  const turn = await session.next(options);
+  const retryWaitMs = turn.retryWaitMs ?? 0;
+  emit({
+    type: 'turn-end', turnId, model: session.model ?? '', usage: normalizeUsage(turn.usage),
+    ms: Math.max(0, Date.now() - started - retryWaitMs), ...(retryWaitMs ? { retryWaitMs } : {}),
+  });
+  return turn;
 }
 
 function firstLine(text = '') {

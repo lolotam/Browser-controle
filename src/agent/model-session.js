@@ -24,7 +24,7 @@ function createProviderSession(slot, settings, conversationId, notify = null) {
   const c = slot.compatible;
   if (!c.model) throw new Error('Choose a model in settings first.');
   const preset = COMPATIBLE_PRESETS[c.preset] ?? COMPATIBLE_PRESETS.custom;
-  return new CompatibleSession({ ...c, thinkingStyle: preset.thinkingStyle, systemPrompt, tools, sessionId: conversationId, notify, textToolCalls: Boolean(preset.textToolCalls) });
+  return new CompatibleSession({ ...c, thinkingStyle: preset.thinkingStyle, systemPrompt, tools, sessionId: conversationId, notify, textToolCalls: Boolean(preset.textToolCalls), usage: Boolean(preset.usage) });
 }
 
 const TEST_TIMEOUT_MS = 45000;

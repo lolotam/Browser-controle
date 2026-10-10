@@ -13,6 +13,7 @@ import * as store from '../sessions/store.js';
 import * as tabSessions from '../sessions/tab-sessions.js';
 import { afterGoogleSignIn, backUpToDrive, restoreFromDrive } from '../lib/drive-backup.js';
 import { googleAccount } from '../lib/google-account.js';
+import { forgetNotification, openFromNotification } from './notifications.js';
 
 const GROUP_COLORS = ['cyan', 'blue', 'green', 'yellow', 'purple', 'pink', 'orange', 'red'];
 const runners = new Map(); // sessionId → SessionRunner
@@ -30,6 +31,10 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => 
 chrome.runtime.onInstalled.addListener(installHeaderRules);
 chrome.runtime.onStartup.addListener(installHeaderRules);
 chrome.tabs.onRemoved.addListener((tabId) => tabSessions.unbindTab(tabId));
+// chrome.notifications exists only once the optional permission is granted, so the
+// listeners are added at start-up when it is, and again when it is granted later.
+listenToNotifications();
+chrome.permissions.onAdded.addListener(listenToNotifications);
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !(changes.settings || changes.chatgptAuth)) return;
   clearTimeout(driveBackupTimer);
@@ -57,6 +62,16 @@ async function installHeaderRules() {
     condition: { urlFilter: '||opencode.ai/zen/', ...own },
   });
   await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [1, 2, 3], addRules: rules });
+}
+
+function listenToNotifications() {
+  if (!chrome.notifications || listenToNotifications.done) return;
+  listenToNotifications.done = true;
+  chrome.notifications.onClicked.addListener((id) => openFromNotification(id, {
+    sessionExists: async (sessionId) => Boolean((await store.loadSession(sessionId))?.meta),
+    bindTab: (tabId, sessionId) => tabSessions.bindTab(tabId, sessionId),
+  }));
+  chrome.notifications.onClosed.addListener((id) => forgetNotification(id));
 }
 
 async function runnerFor(sessionId) {
