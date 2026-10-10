@@ -40,13 +40,18 @@ export function parseArgs(argv, { sets, today = new Date().toISOString().slice(0
   return out;
 }
 
-/** The checked-out commit and whether tracked files differ from it. */
+/**
+ * The checked-out commit, whether tracked files differ from it, and a hash of
+ * that difference: two runs from the same dirty commit with different edits
+ * must not look like the same code.
+ */
 export function gitState(root) {
-  const git = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8' }).trim();
+  const git = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   try {
-    return { commit: git('rev-parse', 'HEAD'), dirty: git('status', '--porcelain', '--untracked-files=no') !== '' };
+    const diff = git('diff', 'HEAD', '--binary');
+    return { commit: git('rev-parse', 'HEAD').trim(), dirty: diff !== '', diff: diff ? crypto.createHash('sha256').update(diff).digest('hex').slice(0, 16) : null };
   } catch {
-    return { commit: 'unknown', dirty: true };
+    return { commit: 'unknown', dirty: true, diff: 'unknown' };
   }
 }
 
@@ -63,6 +68,7 @@ export function buildManifest({ git, set, tasks, models, jev, timeout, settingsT
   const content = {
     commit: git.commit,
     dirty: git.dirty,
+    diff: git.diff ?? null,
     set,
     tasks: tasks.map((t) => t.id),
     models: models.map(({ id, preset, model, effort }) => ({ id, preset, model, effort: effort ?? '' })),
@@ -80,15 +86,26 @@ export function buildManifest({ git, set, tasks, models, jev, timeout, settingsT
  */
 export function claimManifest(outDir, manifest, { started = new Date().toISOString() } = {}) {
   const file = path.join(outDir, 'manifest.json');
+  // A folder with results but no manifest was recorded before manifests: its code
+  // and settings are unknown, so a new manifest must not claim them.
+  if (!fs.existsSync(file) && (fs.existsSync(path.join(outDir, 'run.json')) || hasResults(outDir))) {
+    throw new Error('This results folder was recorded before run manifests. Use --out with a new folder name.');
+  }
   if (!fs.existsSync(file)) {
     fs.writeFileSync(file, `${JSON.stringify({ ...manifest, started }, null, 2)}\n`);
     return manifest;
   }
   const existing = JSON.parse(fs.readFileSync(file, 'utf8'));
   if (existing.id !== manifest.id) {
-    const differs = ['commit', 'dirty', 'set', 'tasks', 'models', 'jev', 'timeout', 'settings']
+    const differs = ['commit', 'dirty', 'diff', 'set', 'tasks', 'models', 'jev', 'timeout', 'settings']
       .filter((k) => JSON.stringify(existing[k]) !== JSON.stringify(manifest[k]));
     throw new Error(`This results folder was started with different ${differs.join(', ')}. Use --out with a new folder name.`);
   }
   return existing;
+}
+
+function hasResults(dir) {
+  if (!fs.existsSync(dir)) return false;
+  return fs.readdirSync(dir, { withFileTypes: true }).some((model) => model.isDirectory()
+    && fs.readdirSync(path.join(dir, model.name), { withFileTypes: true }).some((task) => task.isDirectory() && fs.existsSync(path.join(dir, model.name, task.name, 'result.json'))));
 }

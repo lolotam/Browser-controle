@@ -38,6 +38,22 @@ test('the manifest id follows the content: same run, same id; other code, other 
   assert.doesNotMatch(JSON.stringify(buildManifest(base)), /sk-1|NVIDIA_API_KEY/);
 });
 
+test('a dirty tree with different edits is different code', () => {
+  const a = buildManifest({ ...base, git: { commit: 'abc123', dirty: true, diff: '1111' } });
+  const b = buildManifest({ ...base, git: { commit: 'abc123', dirty: true, diff: '2222' } });
+  assert.notEqual(a.id, b.id);
+});
+
+test('a folder recorded before manifests is refused, not claimed', () => {
+  for (const legacy of ['run.json', path.join('m1', 't1', 'result.json')]) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'legacy-'));
+    fs.mkdirSync(path.dirname(path.join(dir, legacy)), { recursive: true });
+    fs.writeFileSync(path.join(dir, legacy), '{}');
+    assert.throws(() => claimManifest(dir, buildManifest(base)), /recorded before run manifests/);
+    assert.equal(fs.existsSync(path.join(dir, 'manifest.json')), false);
+  }
+});
+
 test('a resume must match the folder manifest; it is written once and never overwritten', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'manifest-'));
   const first = claimManifest(dir, buildManifest(base), { started: 'T0' });
