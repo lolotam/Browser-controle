@@ -6,6 +6,7 @@ import { createProviderForm } from './provider-form.js';
 import { bindTestButton } from './test-button.js';
 import { FEEDBACK_FORM_ID, afterDismissal, afterRating, sendFeedback, shouldAskForRating } from '../lib/feedback.js';
 import { googleAccount, signInWithGoogle, signOutOfGoogle } from '../lib/google-account.js';
+import { RECOMMENDED_SETUP, recommendedSlots } from '../lib/settings.js';
 
 const $ = (id) => document.getElementById(id);
 const request = async (type, payload = {}) => {
@@ -866,7 +867,35 @@ function fillForm() {
   $('replyLang').value = settings.replyLanguage.language;
   syncReplyLanguage();
   fillFastForm(settings.fast);
+  syncRecommended();
 }
+
+// The tested free setup: offered up front until a provider is set up, then behind a link.
+function syncRecommended(open = false) {
+  const configured = authStatus.connected || Object.values(settings.keys ?? {}).some(Boolean) || Boolean(settings.compatible.apiKey);
+  $('recommended').hidden = configured && !open;
+  $('showRecommended').hidden = !$('recommended').hidden;
+  $('recommendedNote').hidden = true;
+}
+
+$('keyLinkMain').href = RECOMMENDED_SETUP.main.keyUrl;
+$('keyLinkBackup').href = RECOMMENDED_SETUP.backup.keyUrl;
+$('showRecommended').addEventListener('click', () => syncRecommended(true));
+
+// Fills both provider forms through their own fill; keys go in the existing key
+// fields, so the shared key store sees them. Nothing is saved until Save.
+$('useRecommended').addEventListener('click', () => {
+  const { main, fallback } = recommendedSlots(readForm(), presets);
+  mainForm.fill(main);
+  fallbackForm.fill(fallback);
+  $('fallbackEnabled').checked = true;
+  syncFallback();
+  mainForm.loadModels();
+  fallbackForm.loadModels();
+  $('recommendedNote').hidden = false;
+  const empty = [$('mainProvider'), $('fallbackProvider')].map((root) => root.querySelector('[data-field="apiKey"]')).find((input) => !input.value);
+  empty?.focus();
+});
 
 function readForm() {
   const next = structuredClone(settings);
@@ -1130,6 +1159,7 @@ function activeModel() {
 
 function showAuth(status) {
   authStatus = status;
+  if (settings) syncRecommended();
   $('authStatus').textContent = status.connected
     ? t('auth.connected', { who: `${status.email ?? 'ChatGPT'}${status.planType ? ` — ${status.planType}` : ''}` })
     : t('auth.disconnected');

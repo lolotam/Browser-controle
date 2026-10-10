@@ -71,3 +71,19 @@ test('switching to a custom endpoint shows that slot\'s own key, not a shared on
   store.show(input, 'custom', 'local-key');
   assert.equal(input.value, 'local-key');
 });
+
+test('the recommended setup fills main and backup, keeps stored keys, and changes nothing else', async () => {
+  const { DEFAULT_SETTINGS, recommendedSlots, RECOMMENDED_SETUP } = await import('../src/lib/settings.js');
+  const draft = { ...structuredClone(DEFAULT_SETTINGS), keys: { openrouter: 'or-key' }, maxSteps: 77 };
+  const { main, fallback } = recommendedSlots(draft);
+  assert.equal(main.provider, 'compatible');
+  assert.equal(main.compatible.preset, 'nvidia');
+  assert.equal(main.compatible.model, RECOMMENDED_SETUP.main.model);
+  assert.equal(main.compatible.apiKey, ''); // still to be pasted
+  assert.equal(main.maxSteps, 77);
+  assert.equal(fallback.enabled, true);
+  assert.equal(fallback.compatible.preset, 'openrouter');
+  assert.equal(fallback.compatible.model, 'apodex/apodex-1.1-mini:free');
+  assert.equal(fallback.compatible.apiKey, 'or-key');
+  assert.equal(draft.compatible.preset, DEFAULT_SETTINGS.compatible.preset); // the draft itself is untouched
+});
