@@ -17,6 +17,8 @@ const grade = (report, checks) => {
   const missing = checks.filter(([, test]) => !has(report, test)).map(([what]) => what);
   return { pass: missing.length === 0, score: (checks.length - missing.length) / checks.length, notes: missing.length ? `missing: ${missing.join(', ')}` : 'all facts present' };
 };
+/** `a` and `b` within `gap` characters of each other, in either order. */
+const near = (a, b, gap = 200) => new RegExp(`(?:${a})[\\s\\S]{0,${gap}}(?:${b})|(?:${b})[\\s\\S]{0,${gap}}(?:${a})`, 'i');
 const num = (digits) => new RegExp(digits.split('').map((d, i, a) => (i > 0 && (a.length - i) % 3 === 0 ? `[,.\\s]?${d}` : d)).join(''));
 
 export const TASKS = [
@@ -27,11 +29,12 @@ export const TASKS = [
     startUrl: 'https://books.toscrape.com/',
     task: 'In the Mystery category (it has more than one page), find every book rated 5 stars. List each title with its price, and say which one is the most expensive.',
     check: (r) => grade(r, [
-      ['A Time of Torment £48.35', /48\.35/],
-      ['What Happened on Beale Street £25.37', /25\.37/],
-      ['The Bachelor Girl’s Guide to Murder £52.30', /52\.30?\b/],
-      ['The Silkworm £23.05', /23\.05/],
-      ['The Girl You Lost £12.29', /12\.29/],
+      // Each title next to its own price; the list shortens long titles, so a distinctive part is matched.
+      ['A Time of Torment £48.35', near('Time of Torment', '48\\.35')],
+      ['What Happened on Beale Street £25.37', near('What Happened|Beale Street', '25\\.37')],
+      ['The Bachelor Girl’s Guide to Murder £52.30', near('Bachelor Girl', '52\\.30?\\b')],
+      ['The Silkworm £23.05', near('Silkworm', '23\\.05')],
+      ['The Girl You Lost £12.29', near('Girl You Lost', '12\\.29')],
       ['the most expensive is the Bachelor Girl’s Guide', /(?:most expensive|highest)[\s\S]{0,250}Bachelor|Bachelor[\s\S]{0,250}(?:most expensive|highest)/i],
     ]),
   },
@@ -79,7 +82,7 @@ export const TASKS = [
     check: (r) => grade(r, [
       ['Jason Doe owes the most', /Jason\s+Doe|Doe,?\s+Jason/i],
       ['jdoe@hotmail.com', /jdoe@hotmail\.com/i],
-      ['Frank Bach first after sorting', /Bach/],
+      ['Frank Bach in the first row after sorting', near('Frank\\s+Bach|Bach,?\\s+Frank', 'first|top', 120)],
     ]),
   },
   {
@@ -102,7 +105,13 @@ export const TASKS = [
     task: 'Fill in and submit this form: First Name "Layla", Last Name "Hassan", Email "layla@example.com", Gender Female, Mobile "0123456789", Subjects "Maths", Hobbies "Reading", Current Address "5 Nile Street, Cairo", State "NCR", City "Delhi". Submit it, then report the values shown in the confirmation table.',
     check: (r) => grade(r, [
       ['name Layla Hassan', /Layla\s+Hassan/i],
+      ['email layla@example.com', /layla@example\.com/i],
+      ['gender Female', /Female/i],
       ['mobile 0123456789', /0123456789/],
+      ['address 5 Nile Street', /5 Nile Street/i],
+      // The date of birth is left at the form's default (today), which the task never mentions:
+      // only a report read from the submitted confirmation contains it.
+      ['date of birth from the confirmation', /Date of Birth[^\n]{0,40}\b20\d\d\b/i],
       ['subject Maths', /Maths/i],
       ['hobby Reading', /Reading/i],
       ['state and city NCR Delhi', /NCR[\s\S]{0,40}Delhi/i],
@@ -128,7 +137,7 @@ export const TASKS = [
     task: 'Open this repository’s Releases and list the 3 most recent release versions with their release dates.',
     check: (r) => grade(r, [
       ['three release versions', (t) => new Set(t.match(/v?1\.\d{2,}\.\d+/g) ?? []).size >= 3],
-      ['their dates', (t) => (t.match(DATE) ?? []).length >= 2],
+      ['a date for each of the three', (t) => (t.match(DATE) ?? []).length >= 3],
     ]),
   },
   {
