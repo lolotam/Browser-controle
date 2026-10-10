@@ -2,7 +2,8 @@
 // OpenAI Responses API at chatgpt.com/backend-api/codex.
 
 import { requestJson } from '../lib/json.js';
-import { fetchModel, readSse } from '../lib/sse.js';
+import { MODEL_IDLE_MS, fetchModel, readSse } from '../lib/sse.js';
+import { ProviderHttpError, readError, withRetry } from '../lib/retry.js';
 import { getValidAuth } from './chatgpt-auth.js';
 
 const BASE_URL = 'https://chatgpt.com/backend-api/codex';
@@ -57,9 +58,10 @@ async function codexClientVersion() {
 }
 
 export class ChatgptSession {
-  constructor({ model, effort, systemPrompt, tools }) {
+  constructor({ model, effort, systemPrompt, tools, notify = null }) {
     this.model = model;
     this.effort = effort;
+    this.notify = notify;
     this.systemPrompt = systemPrompt;
     this.tools = tools;
     this.input = [];
@@ -120,7 +122,7 @@ export class ChatgptSession {
     return parseOutput(items, usage);
   }
 
-  async post(toolChoice, signal, { refreshed = false } = {}) {
+  async post(toolChoice, signal, { refreshed = false, deadline = Date.now() + MODEL_IDLE_MS } = {}) {
     const body = {
       model: this.model,
       instructions: this.instructionsAsField ? this.systemPrompt : undefined,
@@ -136,29 +138,38 @@ export class ChatgptSession {
       include: ['reasoning.encrypted_content'],
       prompt_cache_key: this.sessionId,
     };
-    const res = await fetchModel(`${BASE_URL}/responses`, {
-      method: 'POST',
-      credentials: 'omit',
-      signal,
-      headers: {
-        ...(await authHeaders(refreshed)),
-        'Content-Type': 'application/json',
-        Accept: 'text/event-stream',
-        'OpenAI-Beta': 'responses=experimental',
-        'session-id': this.sessionId,
-        session_id: this.sessionId,
-      },
-      body: requestJson(body),
-    });
-    if (res.ok) return res;
-
-    const detail = await res.text().catch(() => '');
-    if (res.status === 401 && !refreshed) return this.post(toolChoice, signal, { refreshed: true });
-    if (res.status === 400 && this.instructionsAsField && /instruction/i.test(detail)) {
-      this.instructionsAsField = false;
-      return this.post(toolChoice, signal, { refreshed });
+    const headers = {
+      ...(await authHeaders(refreshed)),
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      'OpenAI-Beta': 'responses=experimental',
+      'session-id': this.sessionId,
+      session_id: this.sessionId,
+    };
+    try {
+      return await withRetry(async (remaining) => {
+        let res;
+        try {
+          res = await fetchModel(`${BASE_URL}/responses`, { method: 'POST', credentials: 'omit', signal, headers, body: requestJson(body) }, remaining);
+        } catch (err) {
+          if (err instanceof TypeError) err.network = true;
+          throw err;
+        }
+        if (res.ok) return res;
+        throw new ProviderHttpError(await readError(res));
+      }, { signal, deadline, provider: 'chatgpt', notify: this.notify });
+    } catch (err) {
+      if (!(err instanceof ProviderHttpError)) throw err;
+      if (err.status === 401 && !refreshed) return this.post(toolChoice, signal, { refreshed: true, deadline });
+      if (err.status === 400 && this.instructionsAsField && /instruction/i.test(err.detail)) {
+        this.instructionsAsField = false;
+        return this.post(toolChoice, signal, { refreshed, deadline });
+      }
+      const out = new Error(describeError(err.status, err.detail));
+      out.status = err.status;
+      out.detail = err.detail;
+      throw out;
     }
-    throw new Error(describeError(res.status, detail));
   }
 }
 

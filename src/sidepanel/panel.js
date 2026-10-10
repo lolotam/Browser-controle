@@ -93,6 +93,10 @@ function onEvent(event) {
       ui.liveText.textContent += event.delta;
       scrollDown();
       break;
+    case 'text-reset':
+      ui.liveText?.remove();
+      ui.liveText = null;
+      break;
     case 'assistant-text':
       (ui.liveText ?? add('msg assistant', '')).innerHTML = renderMarkdown(event.text);
       ui.liveText = null;
@@ -199,7 +203,7 @@ function clearMessages() {
   renderNotices();
 }
 
-const NOTICE_TEXT = { switched: 'notice.switched', 'both-failed': 'notice.bothFailed', 'fast-switched': 'notice.fastSwitched' };
+const NOTICE_TEXT = { switched: 'notice.switched', 'both-failed': 'notice.bothFailed', 'fast-switched': 'notice.fastSwitched', retrying: 'notice.retrying' };
 
 /** Newest first; the full provider error is in the tooltip. */
 function renderNotices() {

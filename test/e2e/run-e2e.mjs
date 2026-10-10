@@ -25,6 +25,10 @@ const PAGE = `<!doctype html><html><body>
 <select id="color"><option>Red</option><option>Blue</option></select>
 <button id="go" onclick="document.getElementById('out').textContent = 'Result: ' + q.value + ' / ' + color.value">Go</button>
 <div id="out"></div>
+<!-- Like GitHub releases: the shown date lives in a shadow root, and two releases read the same. -->
+<section><h2><a href="#r2">v9.1.0</a></h2><relative-time datetime="2026-10-08T10:00:00Z"></relative-time></section>
+<section><h2><a href="#r1">v9.0.0</a></h2><relative-time datetime="2026-10-08T09:00:00Z"></relative-time></section>
+<script>customElements.define('relative-time', class extends HTMLElement { connectedCallback() { if (!this.shadowRoot) this.attachShadow({ mode: 'open' }).textContent = '2 days ago'; } });</script>
 </body></html>`;
 
 const find = (text, re) => {
@@ -37,6 +41,7 @@ const find = (text, re) => {
 /** With askFirst the run starts by asking the user, so it stays running until a test answers. */
 function scriptedLlm({ askFirst = false } = {}) {
   let sawImage = false;
+  let sawDates = false;
   const steps = [
     ...(askFirst ? [() => ['ask_user', { question: 'Shall I start?' }]] : []),
     () => ['read_page', {}],
@@ -45,13 +50,15 @@ function scriptedLlm({ askFirst = false } = {}) {
     (last) => ['click', { index: Number(find(last, /\[(\d+)\] button "Go"/)) }],
     () => ['screenshot', {}],
     () => ['get_text', {}],
-    (last) => ['done', { success: true, report: `## Done\n- ${last.match(/Result: [^\n]*/)?.[0] ?? 'NO RESULT'}\n- screenshot seen: ${sawImage}` }],
+    (last) => ['done', { success: true, report: `## Done\n- ${last.match(/Result: [^\n]*/)?.[0] ?? 'NO RESULT'}\n- screenshot seen: ${sawImage}\n- dates seen: ${sawDates}` }],
   ];
   let turn = 0;
   return (body) => {
     const lastTool = [...body.messages].reverse().find((m) => m.role === 'tool')?.content ?? '';
     const lastUser = body.messages.at(-1);
     if (Array.isArray(lastUser.content) && lastUser.content.some((c) => c.type === 'image_url' && c.image_url.url.startsWith('data:image/jpeg'))) sawImage = true;
+    // Both releases read "2 days ago": each date must come with its own release name.
+    if (/v9\.1\.0 · 2 days ago — 2026-10-08T10:00:00Z/.test(lastTool) && /v9\.0\.0 · 2 days ago — 2026-10-08T09:00:00Z/.test(lastTool)) sawDates = true;
     return steps[Math.min(turn++, steps.length - 1)](lastTool);
   };
 }
@@ -131,7 +138,8 @@ function startServer(handlers) {
           else counts.llm += 1;
           const scripted = (isBackup ? handlers.backup : handlers.llm)(body);
           if (scripted === 'quota') {
-            res.writeHead(429, { 'Content-Type': 'application/json' }).end('{"error":{"message":"You exceeded your current quota"}}');
+            // OpenAI's own body for a used-up quota: a limit that will not clear, so no retry.
+            res.writeHead(429, { 'Content-Type': 'application/json' }).end('{"error":{"message":"You exceeded your current quota, please check your plan and billing details.","type":"insufficient_quota","code":"insufficient_quota"}}');
             return;
           }
           const [name, args] = scripted;
@@ -358,7 +366,10 @@ async function main() {
         task: 'Fill the form and report the result',
         handlers: { llm: scriptedLlm() },
         expectReport: 'Result: hello world / Blue',
-        check: ({ report }) => (report.includes('screenshot seen: true') ? [] : ['screenshot never reached the model']),
+        check: ({ report }) => [
+          ...(report.includes('screenshot seen: true') ? [] : ['screenshot never reached the model']),
+          ...(report.includes('dates seen: true') ? [] : ['shadow-DOM release dates never reached the model']),
+        ],
       })),
       ...(await runScenario(context, extensionId, {
         name: 'worker-restart',

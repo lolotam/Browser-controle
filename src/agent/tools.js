@@ -49,6 +49,7 @@ export function formatSnapshot(snap) {
     '',
     'Visible text (truncated; use get_text for more):',
     snap.text || '(empty)',
+    ...(snap.dates?.length ? ['', 'Dates on this page:', ...snap.dates] : []),
   ].join('\n');
 }
 
@@ -132,7 +133,9 @@ export function createToolExecutor(browser, { askUser, signal = null }) {
     get_text: async ({ start = 0, length = 6000 }) => {
       const res = await browser.text(Math.max(0, start), Math.min(Math.max(length, 500), 15000));
       const end = res.start + res.text.length;
-      return `Page text characters ${res.start}-${end} of ${res.total}${end < res.total ? ' (more available)' : ''}:\n${res.text}`;
+      // Dates come after the last slice and are not counted in the offsets.
+      const dates = end >= res.total && res.dates?.length ? `\n\nDates on this page:\n${res.dates.join('\n')}` : '';
+      return `Page text characters ${res.start}-${end} of ${res.total}${end < res.total ? ' (more available)' : ''}:\n${res.text}${dates}`;
     },
     screenshot: async () => {
       const shot = await browser.screenshot();

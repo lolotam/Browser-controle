@@ -13,7 +13,7 @@ import * as store from '../sessions/store.js';
 
 const SAVE_DELAY_MS = 500;
 const KEEP_ALIVE_MS = 20000;
-const STREAMING = new Set(['text-delta', 'reasoning-delta']);
+const STREAMING = new Set(['text-delta', 'reasoning-delta', 'text-reset']);
 
 export class SessionRunner {
   constructor({ meta, body, color, isTakenByOther, onSessionsChanged }) {

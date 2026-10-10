@@ -14,17 +14,17 @@ import { CompatibleSession } from '../providers/openai-compatible.js';
  * `conversationId` is the saved session's id, so a provider that tracks
  * conversations (OpenCode) sees the same one after the worker restarts.
  */
-function createProviderSession(slot, settings, conversationId) {
+function createProviderSession(slot, settings, conversationId, notify = null) {
   const tools = toolDefinitions(settings);
   const systemPrompt = buildSystemPrompt(settings);
   if (slot.provider === 'chatgpt') {
     if (!slot.chatgpt.model) throw new Error('Choose a ChatGPT model in settings first.');
-    return new ChatgptSession({ ...slot.chatgpt, systemPrompt, tools });
+    return new ChatgptSession({ ...slot.chatgpt, systemPrompt, tools, notify });
   }
   const c = slot.compatible;
   if (!c.model) throw new Error('Choose a model in settings first.');
   const preset = COMPATIBLE_PRESETS[c.preset] ?? COMPATIBLE_PRESETS.custom;
-  return new CompatibleSession({ ...c, thinkingStyle: preset.thinkingStyle, systemPrompt, tools, sessionId: conversationId });
+  return new CompatibleSession({ ...c, thinkingStyle: preset.thinkingStyle, systemPrompt, tools, sessionId: conversationId, notify, textToolCalls: Boolean(preset.textToolCalls) });
 }
 
 const TEST_TIMEOUT_MS = 45000;
@@ -52,12 +52,12 @@ function slotLabel(slot) {
  * finished, after a settings change, or when a saved session is reopened.
  */
 export function createModelSession(settings, { notify, seed = null, conversationId }) {
-  const primary = createProviderSession(settings, settings, conversationId);
+  const primary = createProviderSession(settings, settings, conversationId, notify);
   if (seed?.log?.task) primary.addUserMessage(handoffMessage(seed.log, seed.reason));
   const backupEnabled = settings.fallback.enabled;
   return new FallbackSession({
     primary,
-    createBackup: backupEnabled ? () => createProviderSession(settings.fallback, settings, conversationId) : null,
+    createBackup: backupEnabled ? () => createProviderSession(settings.fallback, settings, conversationId, notify) : null,
     labels: { primary: slotLabel(settings), backup: backupEnabled ? slotLabel(settings.fallback) : '' },
     notify,
     log: seed?.log ?? emptyLog(),

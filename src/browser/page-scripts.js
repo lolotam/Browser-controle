@@ -96,6 +96,43 @@ export function snapshotPage(maxElements, maxTextChars) {
     return `[${i}] ${describe(el)}${where}`;
   });
 
+  // Machine-readable dates (<time>, GitHub's <relative-time>, any [datetime]). Their
+  // shown text ("2 days ago") can live in a shadow root that innerText skips, so
+  // each is listed with the nearest heading or link that says what it dates.
+  const pageDates = () => {
+    const ISO = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z| ?UTC|[+-]\d{2}:?\d{2})?)?$/;
+    const squash = (s, n) => (s || '').replace(/\s+/g, ' ').trim().slice(0, n);
+    const lines = [];
+    const seen = new Set();
+    for (const el of document.querySelectorAll('[datetime]')) {
+      if (lines.length >= 40) break;
+      const iso = (el.getAttribute('datetime') || '').trim();
+      const parsed = ISO.test(iso) ? new Date(iso.replace(' ', 'T').replace(/ ?UTC$/, 'Z')) : null; // GitHub also writes '2026-09-04 22:12:00 UTC'
+      // A real calendar date: V8 rolls 2026-02-30 over to March instead of failing.
+      if (!parsed || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== new Date(`${iso.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10)) continue;
+      const shown = squash(el.innerText || (el.shadowRoot && el.shadowRoot.textContent), 40);
+      // The heading just above a date names what it dates (a release, a post); headings
+      // after it belong to the body. Only what is on screen: a hidden menu's heading names nothing.
+      const near = (selector, levels) => {
+        for (let a = el.parentElement, i = 0; a && i < levels; a = a.parentElement, i += 1) {
+          let closest = '';
+          for (const named of a.querySelectorAll(selector)) {
+            if (named === el || named.contains(el) || !(named.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+            if (!named.getClientRects().length || getComputedStyle(named).visibility === 'hidden') continue;
+            closest = squash(named.innerText, 80) || closest;
+          }
+          if (closest) return closest;
+        }
+        return '';
+      };
+      const label = near('h1, h2, h3, h4', 8) || near('a[href]', 4);
+      const line = `${label || '(no label)'} · ${shown || '—'} — ${iso}`;
+      if (seen.has(line)) continue;
+      seen.add(line);
+      lines.push(line);
+    }
+    return lines;
+  };
   const text = clean(document.body ? document.body.innerText : '', maxTextChars * 2)
     .slice(0, maxTextChars);
   const scrollHeight = document.documentElement.scrollHeight;
@@ -106,6 +143,7 @@ export function snapshotPage(maxElements, maxTextChars) {
     elements: lines,
     offscreen,
     text,
+    dates: pageDates(),
   };
 }
 
@@ -173,10 +211,47 @@ export function elementAction(index, action, value, quiet) {
   return { error: `Unknown element action ${action}` };
 }
 
-/** Returns a slice of the page's visible text for reading long pages. */
+/** Returns a slice of the page's visible text for reading long pages, and the page's dates. */
 export function pageText(start, length) {
+  // Machine-readable dates (<time>, GitHub's <relative-time>, any [datetime]). Their
+  // shown text ("2 days ago") can live in a shadow root that innerText skips, so
+  // each is listed with the nearest heading or link that says what it dates.
+  const pageDates = () => {
+    const ISO = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z| ?UTC|[+-]\d{2}:?\d{2})?)?$/;
+    const squash = (s, n) => (s || '').replace(/\s+/g, ' ').trim().slice(0, n);
+    const lines = [];
+    const seen = new Set();
+    for (const el of document.querySelectorAll('[datetime]')) {
+      if (lines.length >= 40) break;
+      const iso = (el.getAttribute('datetime') || '').trim();
+      const parsed = ISO.test(iso) ? new Date(iso.replace(' ', 'T').replace(/ ?UTC$/, 'Z')) : null; // GitHub also writes '2026-09-04 22:12:00 UTC'
+      // A real calendar date: V8 rolls 2026-02-30 over to March instead of failing.
+      if (!parsed || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== new Date(`${iso.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10)) continue;
+      const shown = squash(el.innerText || (el.shadowRoot && el.shadowRoot.textContent), 40);
+      // The heading just above a date names what it dates (a release, a post); headings
+      // after it belong to the body. Only what is on screen: a hidden menu's heading names nothing.
+      const near = (selector, levels) => {
+        for (let a = el.parentElement, i = 0; a && i < levels; a = a.parentElement, i += 1) {
+          let closest = '';
+          for (const named of a.querySelectorAll(selector)) {
+            if (named === el || named.contains(el) || !(named.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+            if (!named.getClientRects().length || getComputedStyle(named).visibility === 'hidden') continue;
+            closest = squash(named.innerText, 80) || closest;
+          }
+          if (closest) return closest;
+        }
+        return '';
+      };
+      const label = near('h1, h2, h3, h4', 8) || near('a[href]', 4);
+      const line = `${label || '(no label)'} · ${shown || '—'} — ${iso}`;
+      if (seen.has(line)) continue;
+      seen.add(line);
+      lines.push(line);
+    }
+    return lines;
+  };
   const text = (document.body ? document.body.innerText : '').replace(/\n{3,}/g, '\n\n');
-  return { total: text.length, start, text: text.slice(start, start + length) };
+  return { total: text.length, start, text: text.slice(start, start + length), dates: pageDates() };
 }
 
 /**

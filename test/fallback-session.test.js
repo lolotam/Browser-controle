@@ -35,7 +35,7 @@ test('a failing primary hands the task, its steps and the latest page to the bac
   assert.equal(session.switched, true);
   assert.equal(notices.length, 1);
   assert.equal(notices[0].level, 'error');
-  assert.equal(notices[0].code, 'quota');
+  assert.equal(notices[0].code, 'rate-limit'); // a 429 without daily or billing evidence
   const [handoff] = backup.received;
   assert.match(handoff.text, /Search for "hello"/);
   assert.match(handoff.text, /click .*index.*3.*Clicked \[3\] button "Go"/s);
