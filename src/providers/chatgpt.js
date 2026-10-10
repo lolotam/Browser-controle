@@ -1,7 +1,8 @@
 // Model access through a ChatGPT subscription: the Codex backend speaks the
 // OpenAI Responses API at chatgpt.com/backend-api/codex.
 
-import { readSse } from '../lib/sse.js';
+import { requestJson } from '../lib/json.js';
+import { fetchModel, readSse } from '../lib/sse.js';
 import { getValidAuth } from './chatgpt-auth.js';
 
 const BASE_URL = 'https://chatgpt.com/backend-api/codex';
@@ -135,7 +136,7 @@ export class ChatgptSession {
       include: ['reasoning.encrypted_content'],
       prompt_cache_key: this.sessionId,
     };
-    const res = await fetch(`${BASE_URL}/responses`, {
+    const res = await fetchModel(`${BASE_URL}/responses`, {
       method: 'POST',
       credentials: 'omit',
       signal,
@@ -147,7 +148,7 @@ export class ChatgptSession {
         'session-id': this.sessionId,
         session_id: this.sessionId,
       },
-      body: JSON.stringify(body),
+      body: requestJson(body),
     });
     if (res.ok) return res;
 

@@ -5,6 +5,7 @@
 
 import { isProbability } from './chat-judge-client.js';
 import { providerMessage } from '../lib/failure.js';
+import { requestJson } from '../lib/json.js';
 
 const REQUEST_TIMEOUT_MS = 8000;
 
@@ -22,7 +23,7 @@ export async function askGatewayDecision({ baseUrl, apiKey, model, state, questi
       'ai-decision-model-specification-version': '4',
       'ai-model-id': model,
     },
-    body: JSON.stringify({ state, questions: toGatewayQuestions(questions) }),
+    body: requestJson({ state, questions: toGatewayQuestions(questions) }),
   });
   if (!res.ok) {
     const detail = providerMessage(await res.text().catch(() => ''));

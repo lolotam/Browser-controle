@@ -3,6 +3,7 @@
 // typed answers with calibrated probabilities, typically in well under a second.
 
 import { providerMessage } from '../lib/failure.js';
+import { requestJson } from '../lib/json.js';
 
 const REQUEST_TIMEOUT_MS = 8000;
 
@@ -18,7 +19,7 @@ export async function askJev({ baseUrl, apiKey, model, state, questions, signal 
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
-    body: JSON.stringify({ model, state, questions }),
+    body: requestJson({ model, state, questions }),
   });
   if (!res.ok) {
     const detail = providerMessage(await res.text().catch(() => ''));

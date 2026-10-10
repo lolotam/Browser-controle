@@ -2,7 +2,8 @@
 // OpenAI API keys, OpenRouter, or a local server.
 
 import { providerMessage } from '../lib/failure.js';
-import { readSse } from '../lib/sse.js';
+import { fetchModel, readSse } from '../lib/sse.js';
+import { requestJson } from '../lib/json.js';
 
 const KEEP_FULL_OBSERVATIONS = 2;
 const TRIMMED_OBSERVATION_CHARS = 400;
@@ -59,12 +60,14 @@ export class CompatibleSession {
 
   async next({ signal, onEvent = () => {}, toolChoice = 'auto' }) {
     if (this.pendingImages.length) {
-      this.messages.push(userMessage('Screenshot returned by the last tool call:', this.pendingImages));
+      this.messages.push(this.textOnly
+        ? userMessage('A screenshot was taken, but this model cannot read images. Use read_page or get_text instead.')
+        : userMessage('Screenshot returned by the last tool call:', this.pendingImages));
       this.pendingImages = [];
     }
     compactMessages(this.messages);
 
-    const res = await fetch(`${this.baseUrl}/chat/completions`, {
+    const res = await fetchModel(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       credentials: 'omit',
       signal,
@@ -73,10 +76,16 @@ export class CompatibleSession {
         ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
         ...(OPENCODE.test(this.baseUrl) ? { 'x-opencode-session': this.sessionId } : {}),
       },
-      body: JSON.stringify(this.requestBody(toolChoice)),
+      body: requestJson(this.requestBody(toolChoice)),
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
+      // A model without vision: drop the screenshots and ask again, once; later
+      // screenshots become a short note (see above).
+      if (/image input|support(?:s)? images?|does not support vision|vision is not supported/i.test(detail) && dropImages(this.messages)) {
+        this.textOnly = true;
+        return this.next({ signal, onEvent, toolChoice });
+      }
       // OpenRouter's own advice for this one is to drop a tool, which the agent cannot do.
       if (/support tool use/i.test(detail)) throw new Error(`Model request failed (HTTP ${res.status}): this model cannot call tools, which the agent needs to use the browser. Pick another model.`);
       // The provider has the model in its list but will not serve it to this account or plan.
@@ -172,7 +181,21 @@ export function compactMessages(messages) {
   }
 }
 
-function userMessage(text, images) {
+/** Replaces every image in the conversation with a note; true when there was one. */
+function dropImages(messages) {
+  let dropped = false;
+  for (const m of messages) {
+    if (!Array.isArray(m.content)) continue;
+    m.content = m.content.map((c) => {
+      if (c.type !== 'image_url') return c;
+      dropped = true;
+      return { type: 'text', text: '[screenshot not shown: this model cannot read images]' };
+    });
+  }
+  return dropped;
+}
+
+function userMessage(text, images = []) {
   if (!images.length) return { role: 'user', content: text };
   return {
     role: 'user',
