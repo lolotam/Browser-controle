@@ -107,7 +107,8 @@ export function snapshotPage(maxElements, maxTextChars) {
     for (const el of document.querySelectorAll('[datetime]')) {
       if (lines.length >= 40) break;
       // A date nobody sees (a hidden template or the other layout) takes no place in the 40.
-      if (!el.getClientRects().length || getComputedStyle(el).visibility === 'hidden') continue;
+      const look = getComputedStyle(el);
+      if (!el.getClientRects().length || look.visibility === 'hidden' || Number(look.opacity) === 0) continue;
       const iso = (el.getAttribute('datetime') || '').trim();
       const parsed = ISO.test(iso) ? new Date(iso.replace(' ', 'T').replace(/ ?UTC$/, 'Z')) : null; // GitHub also writes '2026-09-04 22:12:00 UTC'
       // A real calendar date as written: V8 rolls 2026-02-30 over to March instead of
@@ -303,14 +304,15 @@ export function suggestionAction(index, wanted, mode) {
   }
   if (combo && combo !== field) {
     named(combo);
-    containers.push(combo);
+    // A host's own popup lives in its shadow root, which the host's light DOM does not reach.
+    containers.push(combo.shadowRoot && combo.shadowRoot.contains(field) ? combo.shadowRoot : combo);
   }
 
   const optionsIn = (list) => {
     const seen = new Set();
     const found = [];
     for (const c of list) {
-      let candidates = [...(c.matches('[role=option]') ? [c] : []), ...c.querySelectorAll('[role=option]')];
+      let candidates = [...(c.matches && c.matches('[role=option]') ? [c] : []), ...c.querySelectorAll('[role=option]')];
       if (!candidates.length) candidates = [...c.querySelectorAll('[id*="-option-"]')]; // react-select before v5 marks options only by id
       for (const o of candidates) {
         if (seen.has(o) || !visible(o) || o.matches('[aria-disabled=true], [disabled]')) continue;
@@ -372,7 +374,8 @@ export function pageText(start, length) {
     for (const el of document.querySelectorAll('[datetime]')) {
       if (lines.length >= 40) break;
       // A date nobody sees (a hidden template or the other layout) takes no place in the 40.
-      if (!el.getClientRects().length || getComputedStyle(el).visibility === 'hidden') continue;
+      const look = getComputedStyle(el);
+      if (!el.getClientRects().length || look.visibility === 'hidden' || Number(look.opacity) === 0) continue;
       const iso = (el.getAttribute('datetime') || '').trim();
       const parsed = ISO.test(iso) ? new Date(iso.replace(' ', 'T').replace(/ ?UTC$/, 'Z')) : null; // GitHub also writes '2026-09-04 22:12:00 UTC'
       // A real calendar date as written: V8 rolls 2026-02-30 over to March instead of
