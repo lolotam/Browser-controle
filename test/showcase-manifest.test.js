@@ -95,6 +95,12 @@ test('a new file git does not track yet changes the code hash; an ignored one do
     assert.doesNotMatch(nested.diff, /^unknown/);
     fsm.writeFileSync(p.join(repo, 'nested', 'tool.js'), 'b\n');
     assert.notEqual(gitState(repo).diff, nested.diff);
+    // ...but what the outer repository ignores inside it is not code: not hashed, not walked.
+    const before = gitState(repo).diff;
+    fsm.writeFileSync(p.join(repo, 'nested', '.env.local'), 'KEY=1');
+    assert.equal(gitState(repo).diff, before);
+    fsm.writeFileSync(p.join(repo, 'nested', '.env.local'), 'KEY=2');
+    assert.equal(gitState(repo).diff, before);
   } finally {
     fsm.rmSync(repo, { recursive: true, force: true });
   }

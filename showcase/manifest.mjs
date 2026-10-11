@@ -53,7 +53,19 @@ export function gitState(root) {
     const diff = git('diff', 'HEAD', '--binary');
     const untracked = git('ls-files', '--others', '--exclude-standard', '-z').split('\0').filter(Boolean).sort();
     const hash = crypto.createHash('sha256').update(diff);
-    for (const entry of untracked) hashPath(hash, root, entry.replace(/\/$/, ''));
+    // Paths this repository ignores (.env*, node_modules/, results), asked of git so its
+    // own rules apply even inside an untracked nested repository it lists as one entry.
+    const ignored = (paths) => {
+      if (!paths.length) return new Set();
+      try {
+        const out = execFileSync('git', ['check-ignore', '--stdin', '-z', '--no-index'], { cwd: root, input: paths.join('\0'), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+        return new Set(out.split('\0').filter(Boolean));
+      } catch (err) {
+        if (err.status === 1) return new Set(); // exit 1: none of them is ignored
+        throw err;
+      }
+    };
+    for (const entry of untracked) hashPath(hash, root, entry.replace(/\/$/, ''), ignored);
     const dirty = diff !== '' || untracked.length > 0;
     return { commit: git('rev-parse', 'HEAD').trim(), dirty, diff: dirty ? hash.digest('hex').slice(0, 16) : null };
   } catch {
@@ -62,13 +74,18 @@ export function gitState(root) {
   }
 }
 
-/** A file's name and bytes, or a directory's files (an untracked nested repository), into the hash. */
-function hashPath(hash, root, rel) {
+/**
+ * A file's name and bytes, or a directory's files (an untracked nested repository),
+ * into the hash; ignored entries are skipped without being read or descended into.
+ */
+function hashPath(hash, root, rel, ignored) {
   const full = path.join(root, rel);
   const stat = fs.lstatSync(full);
   hash.update(`\0${rel}\0`);
   if (stat.isDirectory()) {
-    for (const name of fs.readdirSync(full).sort()) if (name !== '.git') hashPath(hash, root, path.join(rel, name));
+    const children = fs.readdirSync(full).filter((name) => name !== '.git').sort().map((name) => path.posix.join(rel.split(path.sep).join('/'), name));
+    const skip = ignored(children);
+    for (const child of children) if (!skip.has(child)) hashPath(hash, root, child, ignored);
   } else if (stat.isSymbolicLink()) {
     hash.update(fs.readlinkSync(full));
   } else {
