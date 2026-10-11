@@ -53,11 +53,26 @@ export function gitState(root) {
     const diff = git('diff', 'HEAD', '--binary');
     const untracked = git('ls-files', '--others', '--exclude-standard', '-z').split('\0').filter(Boolean).sort();
     const hash = crypto.createHash('sha256').update(diff);
-    for (const file of untracked) hash.update(`\0${file}\0`).update(fs.readFileSync(path.join(root, file)));
+    for (const entry of untracked) hashPath(hash, root, entry.replace(/\/$/, ''));
     const dirty = diff !== '' || untracked.length > 0;
     return { commit: git('rev-parse', 'HEAD').trim(), dirty, diff: dirty ? hash.digest('hex').slice(0, 16) : null };
   } catch {
-    return { commit: 'unknown', dirty: true, diff: 'unknown' };
+    // Unknown state never matches another run, so a resume is refused rather than mixed.
+    return { commit: 'unknown', dirty: true, diff: `unknown-${crypto.randomUUID()}` };
+  }
+}
+
+/** A file's name and bytes, or a directory's files (an untracked nested repository), into the hash. */
+function hashPath(hash, root, rel) {
+  const full = path.join(root, rel);
+  const stat = fs.lstatSync(full);
+  hash.update(`\0${rel}\0`);
+  if (stat.isDirectory()) {
+    for (const name of fs.readdirSync(full).sort()) if (name !== '.git') hashPath(hash, root, path.join(rel, name));
+  } else if (stat.isSymbolicLink()) {
+    hash.update(fs.readlinkSync(full));
+  } else {
+    hash.update(fs.readFileSync(full));
   }
 }
 

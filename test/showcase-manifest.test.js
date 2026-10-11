@@ -87,6 +87,14 @@ test('a new file git does not track yet changes the code hash; an ignored one do
     const withEnv = gitState(repo);
     fsm.writeFileSync(p.join(repo, '.env.showcase'), 'KEY=other\n');
     assert.equal(gitState(repo).diff, withEnv.diff); // ignored files are not code
+    // An untracked nested repository is listed as a directory: its files are hashed.
+    fsm.mkdirSync(p.join(repo, 'nested'));
+    execFileSync('git', ['init', '-q'], { cwd: p.join(repo, 'nested') });
+    fsm.writeFileSync(p.join(repo, 'nested', 'tool.js'), 'a\n');
+    const nested = gitState(repo);
+    assert.doesNotMatch(nested.diff, /^unknown/);
+    fsm.writeFileSync(p.join(repo, 'nested', 'tool.js'), 'b\n');
+    assert.notEqual(gitState(repo).diff, nested.diff);
   } finally {
     fsm.rmSync(repo, { recursive: true, force: true });
   }
