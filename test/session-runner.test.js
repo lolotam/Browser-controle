@@ -75,7 +75,9 @@ test('messages sent while a task runs: next step, queued, sent now, removed', as
   runner.steer('then email me', 'queue');
   assert.deepEqual(events.filter((e) => e.type === 'pending-added').map((e) => e.item.mode), ['next-step', 'queue']);
   assert.equal(steering.waiting(), true);
-  assert.deepEqual(steering.take(), ['use the blue one']); // the queued one waits for the task to end
+  const first = steering.take();
+  assert.equal(first.length, 1); // the queued one waits for the task to end
+  assert.match(first[0], /^use the blue one\n\n\[Reply in the language/); // with the reply-language note
   assert.equal(steering.waiting(), false);
   assert.deepEqual(events.filter((e) => e.type === 'user' && e.steer).map((e) => e.text), ['use the blue one']);
 
@@ -84,7 +86,7 @@ test('messages sent while a task runs: next step, queued, sent now, removed', as
   runner.sendNow(queued.id);
   assert.equal(signal.aborted, true);
   assert.equal(steering.waiting(), true);
-  assert.deepEqual(steering.take(), ['then email me']);
+  assert.match(steering.take()[0], /^then email me/);
 
   runner.steer('never mind', 'queue');
   runner.dropMessage(runner.inbox[0].id);

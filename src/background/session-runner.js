@@ -143,7 +143,8 @@ export class SessionRunner {
           this.dropMessage(m.id);
           this.emit({ type: 'user', text: m.text, steer: true });
         }
-        return ready.map((m) => m.text);
+        // The reply language is restated with each message, as with each task.
+        return ready.map((m) => m.text + replyLanguageReminder(this.settings?.replyLanguage));
       },
       turnSignal: (signal) => {
         this.turnAbort = new AbortController();
