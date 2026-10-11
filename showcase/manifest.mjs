@@ -41,15 +41,21 @@ export function parseArgs(argv, { sets, today = new Date().toISOString().slice(0
 }
 
 /**
- * The checked-out commit, whether tracked files differ from it, and a hash of
- * that difference: two runs from the same dirty commit with different edits
- * must not look like the same code.
+ * The checked-out commit, whether the working tree differs from it, and a hash of
+ * that difference: two runs from the same dirty commit with different edits must
+ * not look like the same code. New files git does not track yet count too (a new
+ * helper imported by tracked code), with their contents; ignored files (.env*,
+ * results) do not.
  */
 export function gitState(root) {
   const git = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   try {
     const diff = git('diff', 'HEAD', '--binary');
-    return { commit: git('rev-parse', 'HEAD').trim(), dirty: diff !== '', diff: diff ? crypto.createHash('sha256').update(diff).digest('hex').slice(0, 16) : null };
+    const untracked = git('ls-files', '--others', '--exclude-standard', '-z').split('\0').filter(Boolean).sort();
+    const hash = crypto.createHash('sha256').update(diff);
+    for (const file of untracked) hash.update(`\0${file}\0`).update(fs.readFileSync(path.join(root, file)));
+    const dirty = diff !== '' || untracked.length > 0;
+    return { commit: git('rev-parse', 'HEAD').trim(), dirty, diff: dirty ? hash.digest('hex').slice(0, 16) : null };
   } catch {
     return { commit: 'unknown', dirty: true, diff: 'unknown' };
   }

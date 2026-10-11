@@ -62,3 +62,32 @@ test('a resume must match the folder manifest; it is written once and never over
   assert.throws(() => claimManifest(dir, buildManifest({ ...base, timeout: 360 })), /different timeout/);
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8')).id, first.id);
 });
+
+test('a new file git does not track yet changes the code hash; an ignored one does not', async () => {
+  const { gitState } = await import('../showcase/manifest.mjs');
+  const fsm = await import('node:fs');
+  const os = await import('node:os');
+  const p = await import('node:path');
+  const { execFileSync } = await import('node:child_process');
+  const repo = fsm.mkdtempSync(p.join(os.tmpdir(), 'manifest-git-'));
+  const git = (...a) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { cwd: repo });
+  try {
+    git('init', '-q');
+    fsm.writeFileSync(p.join(repo, '.gitignore'), '.env*\n');
+    fsm.writeFileSync(p.join(repo, 'main.js'), 'import "./helper.js";\n');
+    git('add', '.');
+    git('commit', '-qm', 'base');
+    assert.equal(gitState(repo).dirty, false);
+    fsm.writeFileSync(p.join(repo, 'helper.js'), 'export const v = 1;\n');
+    const first = gitState(repo);
+    assert.equal(first.dirty, true);
+    fsm.writeFileSync(p.join(repo, 'helper.js'), 'export const v = 2;\n');
+    assert.notEqual(gitState(repo).diff, first.diff); // the new helper changed: different code
+    fsm.writeFileSync(p.join(repo, '.env.showcase'), 'KEY=secret\n');
+    const withEnv = gitState(repo);
+    fsm.writeFileSync(p.join(repo, '.env.showcase'), 'KEY=other\n');
+    assert.equal(gitState(repo).diff, withEnv.diff); // ignored files are not code
+  } finally {
+    fsm.rmSync(repo, { recursive: true, force: true });
+  }
+});
