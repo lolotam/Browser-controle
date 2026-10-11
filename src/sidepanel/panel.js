@@ -945,7 +945,13 @@ $('closeSettingsBtn').addEventListener('click', () => toggleSettings(false));
 function toggleSettings(open) {
   // Closing, saved or not: the notifications permission follows the saved switch. One
   // granted for an edit that was not saved, or for a switch saved off, is given back.
-  if (!open && settings && !settings.notify) chrome.permissions.remove({ permissions: ['notifications'] }).catch(() => {});
+  if (!open && settings) {
+    if (!settings.notify) chrome.permissions.remove({ permissions: ['notifications'] }).catch(() => {});
+    // The switch shows the saved choice again, so a later Save cannot store an
+    // unsaved "on" whose permission was just given back.
+    $('notify').checked = Boolean(settings.notify);
+    $('notifyNote').hidden = true;
+  }
   $('settingsView').hidden = !open;
   $('chatView').hidden = open;
   $('settingsError').hidden = true;
