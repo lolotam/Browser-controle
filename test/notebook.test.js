@@ -131,3 +131,31 @@ test('old note calls keep only a marker once a later observation shows the noteb
   compactInput(input);
   assert.equal(input[0].arguments, '{"text":"[saved to the notebook]"}');
 });
+
+test('a very long page URL is cut, so one note cannot outgrow the notebook', () => {
+  const book = new Notebook();
+  book.add('Price £10', `https://shop.test/p?q=${'a'.repeat(50000)}`);
+  assert.ok(book.size < 1000);
+  assert.match(book.format(), /…\)$/);
+});
+
+test('choose_suggestion stopped while waiting for the list clicks nothing', async () => {
+  const stop = new AbortController();
+  const clicks = [];
+  const browser = {
+    ...fakeBrowser(),
+    locate: async () => ({ x: 1, y: 1 }),
+    clickAt: async (x, y) => clicks.push([x, y]),
+    element: async () => ({}),
+    insertText: async () => {},
+    suggestions: async (_i, _w, mode) => {
+      if (mode === 'scan') { stop.abort(); return { tied: true, total: 1, options: ['Delhi'], matches: 1 }; }
+      return { x: 50, y: 60, text: 'Delhi' };
+    },
+  };
+  const execute = createToolExecutor(browser, { askUser: async () => '', signal: stop.signal });
+  const result = await execute('choose_suggestion', { index: 3, text: 'Del', option: 'Delhi' });
+  assert.equal(result.isError, true);
+  assert.match(result.output, /Stopped by user/);
+  assert.deepEqual(clicks, [[1, 1]]); // only the click that focused the field
+});

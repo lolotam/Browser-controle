@@ -142,6 +142,7 @@ export function createToolExecutor(browser, { askUser, signal = null, notebook =
         if (scan.matches > 0 || Date.now() >= end || signal?.aborted) break;
         await sleep(SUGGESTION_POLL_MS, signal);
       }
+      throwIfStopped(signal); // a stopped task never clicks an option it found while stopping
       if (scan.matches !== 1) {
         const more = scan.total > scan.options.length ? ` (+${scan.total - scan.options.length} more)` : '';
         const shown = scan.options.length ? ` Options shown: ${scan.options.map((o) => `"${o}"`).join(', ')}${more}.` : '';
@@ -152,6 +153,7 @@ export function createToolExecutor(browser, { askUser, signal = null, notebook =
       }
       const spot = await browser.suggestions(index, wanted, 'locate');
       await overlay.pointTo(spot, ['select', { option: preview(spot.text) }]);
+      throwIfStopped(signal);
       await browser.clickAt(spot.x, spot.y);
       let shown = false;
       for (const end = Date.now() + SUGGESTION_SETTLE_MS; ;) {
@@ -255,6 +257,10 @@ export function createToolExecutor(browser, { askUser, signal = null, notebook =
 }
 
 /** Resolves after `ms`, or as soon as the task is stopped. */
+function throwIfStopped(signal) {
+  if (signal?.aborted) throw new DOMException('Stopped by user', 'AbortError');
+}
+
 function sleep(ms, signal) {
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, ms);

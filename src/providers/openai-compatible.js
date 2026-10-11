@@ -175,7 +175,7 @@ export class CompatibleSession {
         throw err;
       }
       if (res.ok) return res;
-      throw new ProviderHttpError(await readError(res));
+      throw new ProviderHttpError(await readError(res, deadline - Date.now()));
     }, { signal, deadline, notify: this.notify, onWait: (ms) => { this.retryWaitMs += ms; } });
   }
 

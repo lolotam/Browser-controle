@@ -159,7 +159,7 @@ export class ChatgptSession {
           throw err;
         }
         if (res.ok) return res;
-        throw new ProviderHttpError(await readError(res));
+        throw new ProviderHttpError(await readError(res, deadline - Date.now()));
       }, { signal, deadline, provider: 'chatgpt', notify: this.notify, onWait: (ms) => { this.retryWaitMs += ms; } });
     } catch (err) {
       if (!(err instanceof ProviderHttpError)) throw err;
