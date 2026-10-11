@@ -30,6 +30,8 @@ const PAGE = `<!doctype html><html><body>
 <!-- Like GitHub releases: the shown date lives in a shadow root, and two releases read the same. -->
 <section><h2><a href="#r2">v9.1.0</a></h2><relative-time datetime="2026-10-08T10:00:00Z"></relative-time></section>
 <section><h2><a href="#r1">v9.0.0</a></h2><relative-time datetime="2026-10-08T09:00:00Z"></relative-time></section>
+<!-- A title that repeats the date's words keeps them. -->
+<h2>Yesterday's update <time datetime="2026-10-03T00:00:00Z">Yesterday</time></h2>
 <!-- A date-only link inside the heading that names it. -->
 <h2>Launch day <a href="#launch"><time datetime="2026-10-05T00:00:00Z">Last week</time></a></h2>
 <!-- The mobile layout's copy of v9.1.0's date: one release, one line. -->
@@ -118,7 +120,8 @@ function scriptedLlm({ askFirst = false } = {}) {
     if (/v9\.1\.0 · 2 days ago — 2026-10-08T10:00:00Z/.test(lastTool) && /v9\.0\.0 · 2 days ago — 2026-10-08T09:00:00Z/.test(lastTool)
       && /v8\.9\.0 · Oct 10 — 2026-10-10T00:30:00\+02:00/.test(lastTool)
       && !/Oct 8 — 2026-10-08T10:00:00Z/.test(lastTool)
-      && lastTool.includes('Launch day · Last week — 2026-10-05T00:00:00Z')) sawDates = true;
+      && lastTool.includes('Launch day · Last week — 2026-10-05T00:00:00Z')
+      && lastTool.includes("Yesterday's update · Yesterday — 2026-10-03T00:00:00Z")) sawDates = true;
     return steps[Math.min(turn++, steps.length - 1)](lastTool);
   };
 }

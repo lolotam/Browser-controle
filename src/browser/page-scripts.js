@@ -118,11 +118,22 @@ export function snapshotPage(maxElements, maxTextChars) {
       // The heading just above a date names what it dates (a release, a post); headings
       // after it belong to the body. Only what is on screen: a hidden menu's heading names nothing.
       // A date inside the link or heading that names it (a card "Launch · Yesterday").
+      // The box's visible text without the date element's own (a title may repeat the
+      // date's words: "Yesterday's update" around a <time>Yesterday</time>).
+      const textBesides = (box, skip) => {
+        const parts = [];
+        const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          if (skip.contains(n) || !n.parentElement || !n.parentElement.getClientRects().length) continue;
+          parts.push(n.nodeValue);
+        }
+        return parts.join(' ');
+      };
       // Walks outward: a date-only link inside its heading gives nothing, the heading does.
       const around = () => {
         for (let box = el.parentElement && el.parentElement.closest('h1, h2, h3, h4, a[href]'); box; box = box.parentElement && box.parentElement.closest('h1, h2, h3, h4, a[href]')) {
           if (!box.getClientRects().length || getComputedStyle(box).visibility === 'hidden') continue;
-          const own = squash(shown ? box.innerText.split(shown).join(' ') : box.innerText, 80);
+          const own = squash(textBesides(box, el), 80);
           if (own) return own;
         }
         return '';
@@ -364,11 +375,22 @@ export function pageText(start, length) {
       // The heading just above a date names what it dates (a release, a post); headings
       // after it belong to the body. Only what is on screen: a hidden menu's heading names nothing.
       // A date inside the link or heading that names it (a card "Launch · Yesterday").
+      // The box's visible text without the date element's own (a title may repeat the
+      // date's words: "Yesterday's update" around a <time>Yesterday</time>).
+      const textBesides = (box, skip) => {
+        const parts = [];
+        const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          if (skip.contains(n) || !n.parentElement || !n.parentElement.getClientRects().length) continue;
+          parts.push(n.nodeValue);
+        }
+        return parts.join(' ');
+      };
       // Walks outward: a date-only link inside its heading gives nothing, the heading does.
       const around = () => {
         for (let box = el.parentElement && el.parentElement.closest('h1, h2, h3, h4, a[href]'); box; box = box.parentElement && box.parentElement.closest('h1, h2, h3, h4, a[href]')) {
           if (!box.getClientRects().length || getComputedStyle(box).visibility === 'hidden') continue;
-          const own = squash(shown ? box.innerText.split(shown).join(' ') : box.innerText, 80);
+          const own = squash(textBesides(box, el), 80);
           if (own) return own;
         }
         return '';
