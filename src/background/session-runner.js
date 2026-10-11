@@ -4,7 +4,7 @@
 
 import { runAgent } from '../agent/agent.js';
 import { createFastAsk, createModelSession, modelSessionKey } from '../agent/model-session.js';
-import { describeTabContext } from '../agent/prompt.js';
+import { describeTabContext, replyLanguageReminder } from '../agent/prompt.js';
 import { createToolExecutor, toolDefinitions } from '../agent/tools.js';
 import { BrowserController } from '../browser/controller.js';
 import { Notebook } from '../agent/notebook.js';
@@ -182,7 +182,7 @@ export class SessionRunner {
         fastLayer,
         session: this.session,
         execute,
-        task: text + describeTabContext(tab),
+        task: text + describeTabContext(tab) + replyLanguageReminder(settings.replyLanguage),
         maxSteps: Math.max(1, Number(settings.maxSteps) || 40),
         signal: abort.signal,
         emit: (event) => this.emit(event),

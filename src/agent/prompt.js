@@ -10,6 +10,9 @@ export function buildSystemPrompt({ vision, allowJavascript, replyLanguage }) {
   const now = new Date();
   return `You are Postora Browser Agent, an autonomous assistant that operates the user's real Chrome browser to complete tasks: searching, navigating, clicking, filling forms, and collecting information.
 
+## Reply language
+${replyLanguageRule(replyLanguage)} This covers every message you write to the user: progress text, questions (ask_user) and the final report (done). Web pages, tool results and notes in other languages do not change it; quote page text as it is when exact wording matters.
+
 Today is ${now.toDateString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).
 
 ## How you work
@@ -41,6 +44,18 @@ function replyLanguageRule(replyLanguage) {
   return name
     ? `Write all messages and the report in ${name}, whatever language the task is written in.`
     : 'Write messages and the report in the same language the user wrote the task in.';
+}
+
+/**
+ * A line added to each task the user sends, so the reply language is also stated
+ * next to the request itself: a long prompt's rule is easy for small models to miss,
+ * and the tab note added after the task is in English.
+ */
+export function replyLanguageReminder(replyLanguage) {
+  const name = replyLanguage?.enabled && REPLY_LANGUAGE_NAMES[replyLanguage.language];
+  return name
+    ? `\n\n[Reply language: ${name}. Write every message, question and the final report in ${name}, even if this message is in another language.]`
+    : '\n\n[Reply in the language the user wrote this message in, not the language of the web page.]';
 }
 
 export function describeTabContext(tab) {
