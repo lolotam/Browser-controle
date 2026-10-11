@@ -106,6 +106,8 @@ export function snapshotPage(maxElements, maxTextChars) {
     const seen = new Set();
     for (const el of document.querySelectorAll('[datetime]')) {
       if (lines.length >= 40) break;
+      // A date nobody sees (a hidden template or the other layout) takes no place in the 40.
+      if (!el.getClientRects().length || getComputedStyle(el).visibility === 'hidden') continue;
       const iso = (el.getAttribute('datetime') || '').trim();
       const parsed = ISO.test(iso) ? new Date(iso.replace(' ', 'T').replace(/ ?UTC$/, 'Z')) : null; // GitHub also writes '2026-09-04 22:12:00 UTC'
       // A real calendar date as written: V8 rolls 2026-02-30 over to March instead of
@@ -292,7 +294,13 @@ export function suggestionAction(index, wanted, mode) {
   const activeId = field.getAttribute('aria-activedescendant');
   const active = activeId && byId(activeId);
   if (active) containers.push(active.closest('[role=listbox]') || active.parentElement || active);
-  const combo = field.closest('[role=combobox]');
+  // The owning combobox may be the field's shadow host (a custom element), so the
+  // search walks out of shadow roots.
+  let combo = null;
+  for (let n = field; n && !combo; n = n.getRootNode().host || null) {
+    const from = n === field ? field.parentElement : n;
+    combo = from ? from.closest('[role=combobox]') : null;
+  }
   if (combo && combo !== field) {
     named(combo);
     containers.push(combo);
@@ -363,6 +371,8 @@ export function pageText(start, length) {
     const seen = new Set();
     for (const el of document.querySelectorAll('[datetime]')) {
       if (lines.length >= 40) break;
+      // A date nobody sees (a hidden template or the other layout) takes no place in the 40.
+      if (!el.getClientRects().length || getComputedStyle(el).visibility === 'hidden') continue;
       const iso = (el.getAttribute('datetime') || '').trim();
       const parsed = ISO.test(iso) ? new Date(iso.replace(' ', 'T').replace(/ ?UTC$/, 'Z')) : null; // GitHub also writes '2026-09-04 22:12:00 UTC'
       // A real calendar date as written: V8 rolls 2026-02-30 over to March instead of

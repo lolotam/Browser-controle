@@ -108,6 +108,7 @@ test('two sessions notifying at once both keep their routes', async () => {
 test('a failing notifications API never reaches the task', async () => {
   chrome.notifications.create = async () => { throw new Error('boom'); };
   assert.equal(await notifyTransition({ kind: 'finished', sessionId: 's1', tabId: 7, settings: on }), null);
+  assert.deepEqual(state.session, {}); // and leaves no route behind
 });
 
 test('the runner notifies each transition of a task once', async () => {

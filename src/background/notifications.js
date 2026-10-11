@@ -25,13 +25,14 @@ export async function notificationsAllowed(settings) {
  * Returns the notification id, or null when none was shown.
  */
 export async function notifyTransition({ kind, sessionId, tabId, groupId = null, settings }) {
+  let id = null;
   try {
     if (!TEXT[kind] || !(await notificationsAllowed(settings))) return null;
     if (await userIsLookingAt(tabId, groupId)) return null;
     const tab = Number.isInteger(tabId) ? await chrome.tabs.get(tabId).catch(() => null) : null;
     const language = resolveLanguage(settings.uiLanguage, chrome.i18n?.getUILanguage?.());
     const messages = MESSAGES[language] ?? MESSAGES.en;
-    const id = `postora:${crypto.randomUUID()}`;
+    id = `postora:${crypto.randomUUID()}`;
     await saveRoute(id, { sessionId, tabId: tab?.id ?? null, windowId: tab?.windowId ?? null });
     await chrome.notifications.create(id, {
       type: 'basic',
@@ -41,6 +42,7 @@ export async function notifyTransition({ kind, sessionId, tabId, groupId = null,
     });
     return id;
   } catch {
+    if (id) await takeRoute(id).catch(() => {}); // no notification, so nothing can ever use it
     return null;
   }
 }
