@@ -40,25 +40,32 @@ export class Notebook {
   constructor({ entries = [], dropped = false } = {}) {
     this.entries = entries;
     this.dropped = dropped; // older notes were removed to stay under the cap
+    this.fit(); // a notebook saved under an older way of counting fits the cap at once
   }
 
   static from(saved) {
     return new Notebook(saved && Array.isArray(saved.entries) ? saved : {});
   }
 
+  /** The notebook's length as the model reads it: header, numbering and sources included. */
   get size() {
-    return this.entries.reduce((n, e) => n + e.text.length + (e.url?.length ?? 0), 0);
+    return this.format().length;
   }
 
   /** Adds a note; the oldest notes go first when the notebook is over its cap. */
   add(text, url = '') {
     const source = quoteNotebookHeader(url ?? '');
     this.entries.push({ text: quoteNotebookHeader(text).trim(), url: source.length > URL_MAX_CHARS ? `${source.slice(0, URL_MAX_CHARS)}…` : source, at: Date.now() });
+    this.fit();
+    return this.entries.length;
+  }
+
+  /** Drops the oldest notes while the notebook is over its cap. */
+  fit() {
     while (this.size > NOTEBOOK_MAX_CHARS && this.entries.length > 1) {
       this.entries.shift();
       this.dropped = true;
     }
-    return this.entries.length;
   }
 
   /** The notes as the model reads them; page text, so marked untrusted. */

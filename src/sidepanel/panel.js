@@ -942,7 +942,31 @@ try {
 } catch { /* storage blocked */ }
 $('closeSettingsBtn').addEventListener('click', () => toggleSettings(false));
 
+// Numbers each permission check; a newer check or a click on the switch makes an
+// older answer stale, so it can never undo what the user just chose.
+let notifyCheck = 0;
+
+/** The switch as it works: saved on and still granted by Chrome (it can be revoked there). */
+function syncNotifySwitch() {
+  const check = ++notifyCheck;
+  $('notify').checked = false;
+  $('notifyNote').hidden = true;
+  if (!settings?.notify) return;
+  chrome.permissions.contains({ permissions: ['notifications'] }).then((granted) => {
+    if (check === notifyCheck) $('notify').checked = granted;
+  }, () => {});
+}
+
 function toggleSettings(open) {
+  // Closing, saved or not: the notifications permission follows the saved switch. One
+  // granted for an edit that was not saved, or for a switch saved off, is given back.
+  if (!open && settings) {
+    if (!settings.notify) chrome.permissions.remove({ permissions: ['notifications'] }).catch(() => {});
+    // The switch shows the saved choice again, so a later Save cannot store an
+    // unsaved "on" whose permission was just given back.
+    syncNotifySwitch();
+  }
+  if (open && settings) syncNotifySwitch(); // the permission may have been revoked in Chrome since
   $('settingsView').hidden = !open;
   $('chatView').hidden = open;
   $('settingsError').hidden = true;
@@ -995,10 +1019,7 @@ function fillForm() {
   $('allowJavascript').checked = settings.allowJavascript;
   $('showCursor').checked = settings.showCursor;
   $('steerMode').value = settings.steerMode ?? 'next-step';
-  $('notify').checked = false;
-  $('notifyNote').hidden = true;
-  // On only while Chrome still grants the permission: it can be revoked outside the panel.
-  if (settings.notify) chrome.permissions.contains({ permissions: ['notifications'] }).then((granted) => { $('notify').checked = granted; });
+  syncNotifySwitch();
   $('replyLangEnabled').checked = settings.replyLanguage.enabled;
   $('replyLang').value = settings.replyLanguage.language;
   syncReplyLanguage();
@@ -1062,6 +1083,7 @@ $('replyLangEnabled').addEventListener('change', syncReplyLanguage);
 // The permission is asked for from the click itself (Chrome needs the gesture), and
 // given back when the switch goes off. Notifications need both the switch and it.
 $('notify').addEventListener('change', async () => {
+  notifyCheck += 1; // the user's choice wins over any check still waiting
   const box = $('notify');
   $('notifyNote').hidden = true;
   if (box.checked) {
@@ -1071,7 +1093,7 @@ $('notify').addEventListener('change', async () => {
       $('notifyNote').hidden = false;
     }
   } else {
-    await chrome.permissions.remove({ permissions: ['notifications'] }).catch(() => {});
+    // Given back only once the switch is saved off (see toggleSettings), like the rest of this form.
   }
 });
 
