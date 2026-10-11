@@ -339,7 +339,9 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
       await panel.setViewportSize({ width: 400, height: 720 });
       await panel.screenshot({ path: path.join(process.env.E2E_SCREENSHOTS, `${name}-${process.env.E2E_COLOR_SCHEME ?? 'light'}.png`) });
     }
-    const steps = await panel.$$eval('.step', (rows) => rows.map((r) => `${r.classList.contains('fast') ? '⚡' : ' '} ${r.innerText.replace(/\s+/g, ' ')}`));
+    // textContent: steps inside a closed thread are hidden, and innerText of hidden text is empty.
+    const steps = await panel.$$eval('.step', (rows) => rows.map((r) => `${r.classList.contains('fast') ? '⚡' : ' '} ${r.textContent.replace(/\s+/g, ' ')}`));
+    const threads = await panel.$$eval('.thread', (rows) => rows.map((r) => ({ open: r.open, title: r.querySelector('summary .title').textContent, meta: r.querySelector('summary .meta').textContent })));
     console.log(`\n== scenario: ${name} ==\n${steps.join('\n')}\n--- report ---\n${report}\n(LLM calls: ${counts.llm}, Jev calls: ${counts.jev}, judge calls: ${counts.judge}, decision calls: ${counts.decision})`);
 
     const failures = [];
@@ -349,7 +351,7 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
     if (pageErrors.length) failures.push(`side panel errors: ${pageErrors.join(' | ')}`);
     const notices = await panel.$$eval('.notice.error', (rows) => rows.map((r) => r.innerText));
     if (notices.length) console.log(`notices: ${notices.join(' | ')}`);
-    failures.push(...check({ counts, steps, report, notices, duringResult, panel }));
+    failures.push(...check({ counts, steps, report, notices, threads, duringResult, panel }));
     await target.close();
     return failures;
   } finally {
@@ -427,7 +429,7 @@ async function runParallelScenario(context, extensionId) {
     await targetB.bringToFront();
     await panelB.fill('#input', 'Fill the form and report the result (session B)');
     await panelB.click('#sendBtn');
-    await panelB.waitForSelector('.step', { timeout: 30000 }); // B has claimed tab B
+    await panelB.waitForSelector('.step', { state: 'attached', timeout: 30000 }); // B has claimed tab B (its step may sit in a closed thread)
     await panelA.fill('#input', 'Yes, start');
     await panelA.click('#sendBtn');
 
@@ -472,9 +474,11 @@ async function main() {
         task: 'Fill the form and report the result',
         handlers: { llm: scriptedLlm() },
         expectReport: 'Result: hello world / Blue',
-        check: ({ report }) => [
+        check: ({ report, threads }) => [
           ...(report.includes('screenshot seen: true') ? [] : ['screenshot never reached the model']),
           ...(report.includes('dates seen: true') ? [] : ['shadow-DOM release dates never reached the model']),
+          // One closed thread per model turn, named by its tools, with its time and tokens on the line.
+          ...(threads.length === 7 && threads.every((th) => !th.open && /100 in · 10 out/.test(th.meta)) && threads[1].title === 'type_text' ? [] : [`expected 7 closed threads with time and tokens, got ${JSON.stringify(threads.slice(0, 2))}`]),
           // Seven model turns of 100 + 10 tokens, and a time for the whole task.
           ...(/Took \d+\.\ds · 700 tokens in · 70 out/.test(report) ? [] : [`expected task totals under the report, got: ${report.split('\n').at(-1)}`]),
         ],
