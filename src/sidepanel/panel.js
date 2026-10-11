@@ -16,7 +16,7 @@ const request = async (type, payload = {}) => {
   return res.result;
 };
 
-const ui = { running: false, question: null, liveText: null, liveReasoning: null, trace: null, steps: new Map(), replayed: false, notices: [], stats: newStats() };
+const ui = { thread: null, running: false, question: null, liveText: null, liveReasoning: null, trace: null, steps: new Map(), replayed: false, notices: [], stats: newStats() };
 const MAX_NOTICES = 3;
 let settings = null;
 let presets = {};
@@ -92,16 +92,19 @@ function onEvent(event) {
       }
       break;
     case 'thinking':
-      ui.liveText = null;
-      ui.liveReasoning = null;
+      openThread(event.step);
       break;
     case 'reasoning-delta':
-      ui.liveReasoning ??= add('msg reasoning', '');
+      ui.liveReasoning ??= threadPart('msg reasoning');
       ui.liveReasoning.textContent += event.delta;
+      if (ui.thread) {
+        ui.thread.reasoning += event.delta;
+        ui.thread.title.textContent = threadTitle(ui.thread);
+      }
       scrollDown();
       break;
     case 'text-delta':
-      ui.liveText ??= add('msg assistant', '');
+      ui.liveText ??= threadPart('msg assistant');
       ui.liveText.textContent += event.delta;
       scrollDown();
       break;
@@ -110,13 +113,27 @@ function onEvent(event) {
       ui.liveText = null;
       break;
     case 'assistant-text':
-      (ui.liveText ?? add('msg assistant', '')).innerHTML = renderMarkdown(event.text);
+      (ui.liveText ?? threadPart('msg assistant')).innerHTML = renderMarkdown(event.text);
       ui.liveText = null;
+      if (ui.thread) {
+        ui.thread.text = event.text;
+        ui.thread.title.textContent = threadTitle(ui.thread);
+      }
+      break;
+    case 'turn-interrupted':
+      ui.thread?.box.classList.add('interrupted');
+      closeThread();
       break;
     case 'tool-start':
+      if (event.fast) closeThread(); // the fast layer acts between model turns
+      if (ui.thread) {
+        ui.thread.tools.push(event.name);
+        ui.thread.title.textContent = threadTitle(ui.thread);
+      }
       addStep(event);
       break;
     case 'fast-handoff':
+      closeThread();
       traceBlock().append(Object.assign(document.createElement('div'), { className: 'step handoff', textContent: `⚡→🧠 ${event.reason}` }));
       scrollDown();
       break;
@@ -132,6 +149,7 @@ function onEvent(event) {
       break;
     }
     case 'ask':
+      closeThread();
       setQuestion(event.question);
       break;
     case 'final': {
@@ -176,7 +194,19 @@ function onEvent(event) {
   }
 }
 
+/** A message inside the current turn's thread, or in the chat when there is none. */
+function threadPart(className) {
+  if (!ui.thread) return add(className, '');
+  const node = Object.assign(document.createElement('div'), { className, dir: 'auto' });
+  if (ui.thread.trace) ui.thread.body.insertBefore(node, ui.thread.trace);
+  else ui.thread.body.append(node);
+  scrollDown();
+  return node;
+}
+
+/** A message in the chat itself (the user, a report, an error): the open thread closes. */
 function add(className, text) {
+  closeThread();
   $('emptyState').hidden = true;
   ui.trace = null;
   const node = document.createElement('div');
@@ -188,15 +218,68 @@ function add(className, text) {
   return node;
 }
 
-/** Consecutive tool steps and fast-layer hand-overs share one trace block. */
+/**
+ * Consecutive tool steps and fast-layer hand-overs share one trace block: inside the
+ * current model turn's thread, or on its own for fast-layer steps between turns.
+ */
 function traceBlock() {
   $('emptyState').hidden = true;
+  if (ui.thread) {
+    if (!ui.thread.trace) {
+      ui.thread.trace = Object.assign(document.createElement('div'), { className: 'trace' });
+      ui.thread.body.append(ui.thread.trace);
+    }
+    return ui.thread.trace;
+  }
   if (!ui.trace) {
     ui.trace = document.createElement('div');
     ui.trace.className = 'trace';
     $('messages').append(ui.trace);
   }
   return ui.trace;
+}
+
+/**
+ * One model turn as a thread: a single collapsible line (its first thought, or its
+ * text or tools) holding the reasoning, any text and the turn's tool steps. Open
+ * while the turn works; it closes when the next turn starts or the task ends,
+ * unless the user opened or closed it by hand.
+ */
+function openThread(step) {
+  closeThread();
+  $('emptyState').hidden = true;
+  ui.trace = null;
+  const box = Object.assign(document.createElement('details'), { className: 'thread', open: true });
+  const summary = document.createElement('summary');
+  const title = span('title', t('thread.thinking'));
+  title.dir = 'auto';
+  const meta = span('meta', '');
+  summary.append(title, meta);
+  const body = Object.assign(document.createElement('div'), { className: 'thread-body' });
+  box.append(summary, body);
+  $('messages').append(box);
+  const thread = { box, title, meta, body, step, reasoning: '', text: '', tools: [], trace: null, userToggled: false };
+  summary.addEventListener('click', () => { thread.userToggled = true; });
+  ui.thread = thread;
+  scrollDown();
+}
+
+function closeThread() {
+  const thread = ui.thread;
+  if (!thread) return;
+  if (!thread.userToggled) thread.box.open = false;
+  thread.title.textContent = threadTitle(thread);
+  ui.thread = null;
+  ui.liveReasoning = null;
+  ui.liveText = null;
+}
+
+/** The thread's line: its first sentence of thought, else its text, else its tools. */
+function threadTitle(thread) {
+  const first = (text) => text.trim().split(/(?<=[.!?؟])\s|\n/)[0].trim();
+  const line = first(thread.reasoning) || first(thread.text) || [...new Set(thread.tools)].join(', ');
+  if (!line) return t('thread.step', { n: thread.step ?? '' });
+  return line.length > 90 ? `${line.slice(0, 90)}…` : line;
 }
 
 function addStep({ step, callId, name, args, fast }) {
@@ -237,11 +320,20 @@ function addTurn({ model, ms, retryWaitMs, usage }) {
   } else {
     ui.stats.missing += 1;
   }
+  const tokens = usage ? t('stats.tokens', { input: number(usage.input), output: number(usage.output) }) : '';
+  const waited = retryWaitMs ? t('stats.retryWait', { time: formatDuration(retryWaitMs) }) : '';
+  const time = Number.isFinite(ms) ? formatDuration(ms) : '';
+  if (ui.thread) {
+    // On the thread's own line: the model, its time and its tokens.
+    ui.thread.meta.textContent = [time, tokens, waited].filter(Boolean).join(' · ');
+    ui.thread.meta.title = model || '';
+    return;
+  }
   const row = document.createElement('div');
   row.className = 'step turn';
   row.append(span('mark', '◆'), span('name', model || 'model'));
-  row.append(span('args', [usage ? t('stats.tokens', { input: number(usage.input), output: number(usage.output) }) : '', retryWaitMs ? t('stats.retryWait', { time: formatDuration(retryWaitMs) }) : ''].filter(Boolean).join(' · ')));
-  if (Number.isFinite(ms)) row.append(span('time', formatDuration(ms)));
+  row.append(span('args', [tokens, waited].filter(Boolean).join(' · ')));
+  if (time) row.append(span('time', time));
   traceBlock().append(row);
   scrollDown();
 }
@@ -257,7 +349,8 @@ function totalsLine(end) {
 }
 
 function clearMessages() {
-  $('messages').querySelectorAll('.msg, .trace').forEach((n) => n.remove());
+  ui.thread = null;
+  $('messages').querySelectorAll('.msg, .trace, .thread').forEach((n) => n.remove());
   ui.steps.clear();
   ui.trace = null;
   ui.notices = [];
@@ -297,6 +390,7 @@ function setQuestion(question) {
 
 function setRunning(running) {
   ui.running = running;
+  if (!running) closeThread();
   $('statusDot').classList.toggle('running', running);
   $('stopBtn').hidden = !running;
   $('sendBtn').hidden = running && !ui.question;
