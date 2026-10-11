@@ -23,12 +23,19 @@ export function parseTextToolCalls(text, tools) {
     if (!tool) return null;
     const args = typedArgs(call.args, tool.parameters ?? {});
     if (!args) return null;
-    const key = `${call.name} ${JSON.stringify(args)}`;
+    const key = `${call.name} ${canonical(args)}`; // key order must not hide a repeated call
     if (seen.has(key)) return null;
     seen.add(key);
     calls.push({ name: call.name, args, fromJson: call.fromJson });
   }
   return calls.map(({ name, args }) => ({ name, args }));
+}
+
+/** JSON with object keys sorted at every level. */
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value && typeof value === 'object') return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${canonical(value[k])}`).join(',')}}`;
+  return JSON.stringify(value);
 }
 
 /** Hermes/Qwen XML (values are text) or JSON ({"name", "arguments"}). */

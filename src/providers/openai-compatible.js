@@ -7,7 +7,7 @@ import { requestJson } from '../lib/json.js';
 import { ProviderHttpError, readError, withRetry } from '../lib/retry.js';
 import { parseTextToolCalls } from './text-tool-calls.js';
 import { kindOf } from '../agent/tool-kinds.js';
-import { NOTEBOOK_HEADER, NOTE_SAVED_ARGS } from '../agent/notebook.js';
+import { NOTEBOOK_HEADER, NOTE_SAVED_ARGS, withoutNotebook } from '../agent/notebook.js';
 
 const KEEP_FULL_OBSERVATIONS = 2;
 const TRIMMED_OBSERVATION_CHARS = 400;
@@ -124,6 +124,7 @@ export class CompatibleSession {
           this.textOnly = true;
           return this.next({ signal, onEvent, toolChoice }, deadline, true);
         }
+        if (acc.result().text) onEvent({ type: 'text-reset' }); // the backup's answer must not follow a half answer
         throw new Error(message);
       }
       const delta = acc.push(chunk);
@@ -134,7 +135,10 @@ export class CompatibleSession {
 
     const result = acc.result();
     // Neither a finish reason nor [DONE]: the connection dropped mid-answer.
-    if (!result.finishReason && !done) throw new Error('Model request failed: the response stream ended before the answer was complete.');
+    if (!result.finishReason && !done) {
+      if (result.text) onEvent({ type: 'text-reset' }); // withdrawn before the backup or the error shows
+      throw new Error('Model request failed: the response stream ended before the answer was complete.');
+    }
     this.turn += 1;
     const complete = COMPLETE.has(result.finishReason) || (done && !result.finishReason);
     if (complete && !result.toolCalls.length && toolChoice !== 'none' && this.textToolCalls) {
@@ -250,14 +254,19 @@ export function compactMessages(messages) {
   const kindOfResult = (m) => kindOf(names.get(m.tool_call_id));
   const observations = toolMessages.filter((m) => !['bookkeeping', 'notes'].includes(kindOfResult(m)));
   const notebookReads = toolMessages.filter((m) => kindOfResult(m) === 'notes');
+  // Only the agent adds the notebook header (tools quote it in page text), so it marks
+  // a notebook copy; one copy is enough, the latest.
+  const lastNotebook = messages.findLastIndex((m) => m.role === 'tool' && typeof m.content === 'string' && m.content.includes(NOTEBOOK_HEADER));
+  messages.forEach((m, i) => {
+    if (m.role === 'tool' && i < lastNotebook && typeof m.content === 'string') m.content = withoutNotebook(m.content);
+  });
   for (const m of [...observations.slice(0, -KEEP_FULL_OBSERVATIONS), ...notebookReads.slice(0, -1)]) {
     if (typeof m.content === 'string' && m.content.length > TRIMMED_OBSERVATION_CHARS + 50) {
       m.content = `${m.content.slice(0, TRIMMED_OBSERVATION_CHARS)}\n…[older page state trimmed]`;
     }
   }
-  // A note's text is in the notebook copy of every later full observation, so once
-  // one follows, the call keeps only a marker and old notes no longer grow the context.
-  const lastNotebook = messages.findLastIndex((m) => m.role === 'tool' && typeof m.content === 'string' && m.content.includes(NOTEBOOK_HEADER));
+  // A note's text is in the latest notebook copy, so once one follows, the call keeps
+  // only a marker and old notes no longer grow the context.
   const resultAt = new Map(messages.map((m, i) => [m.role === 'tool' ? m.tool_call_id : null, i]));
   for (const m of messages) {
     for (const tc of m.tool_calls ?? []) {

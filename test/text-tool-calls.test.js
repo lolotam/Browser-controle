@@ -150,3 +150,22 @@ test('the same vLLM refusal sent inside an HTTP 200 stream also drops screenshot
     globalThis.fetch = original;
   }
 });
+
+test('a repeated call with its arguments in another order is still a repeat', () => {
+  const twice = '<tool_call>{"name":"click","arguments":{"index":3,"double":false}}</tool_call><tool_call>{"name":"click","arguments":{"double":false,"index":3}}</tool_call>';
+  assert.equal(parseTextToolCalls(twice, tools), null);
+});
+
+test('text shown before the stream broke off is withdrawn before the error', async () => {
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => stream({ choices: [{ delta: { content: 'Half an ans' } }] });
+    const events = [];
+    const s = session();
+    s.addUserMessage('x');
+    await assert.rejects(s.next({ onEvent: (e) => events.push(e.type) }), /ended before the answer was complete/);
+    assert.deepEqual(events, ['text-delta', 'text-reset']);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

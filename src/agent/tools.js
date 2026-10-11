@@ -2,7 +2,7 @@
 // BrowserController. Every tool returns { output, images? } where output is the
 // text observation the model sees next.
 
-import { NOTE_MAX_CHARS } from './notebook.js';
+import { NOTE_MAX_CHARS, NOTEBOOK_MAX_CHARS, quoteNotebookHeader } from './notebook.js';
 
 const obj = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const str = (description) => ({ type: 'string', description });
@@ -36,7 +36,7 @@ const DEFINITIONS = [
   // @store-strip-start
   { name: 'run_javascript', description: 'Evaluate a JavaScript expression in the page and return its JSON-serialisable value. Use for precise data extraction.', parameters: obj({ expression: str('JavaScript expression; may be an async IIFE') }, ['expression']), javascript: true },
   // @store-strip-end
-  { name: 'note', description: 'Save a finding to your notebook (up to 1500 characters): items, prices, names, links. Notes are never trimmed, so save what you collect on each page before leaving it when a task spans several pages.', parameters: obj({ text: str('What you found, with enough detail to use in the final report') }, ['text']) },
+  { name: 'note', description: `Save a finding to your notebook (up to 1500 characters): items, prices, names, links. Notes stay when older page states are trimmed, so save what you collect on each page before leaving it when a task spans several pages. The notebook holds ${NOTEBOOK_MAX_CHARS} characters in all; when it is full the oldest notes are dropped, so keep notes short and merge related findings.`, parameters: obj({ text: str('What you found, with enough detail to use in the final report') }, ['text']) },
   { name: 'read_notes', description: 'Read everything saved in your notebook for this session.', parameters: obj({}) },
   { name: 'ask_user', description: 'Ask the user a question and wait for the answer. Required before purchases, payments, sending messages/emails/posts, deleting data, or entering credentials; also use when the task is ambiguous or you hit a login/CAPTCHA you cannot pass.', parameters: obj({ question: str('Question for the user') }, ['question']) },
   { name: 'done', description: 'Finish the task and give the user the final report in Markdown, in the user\'s language.', parameters: obj({ report: str('Final report: what was done and every piece of information collected, with source links'), success: { type: 'boolean', description: 'Whether the task was fully completed' } }, ['report', 'success']) },
@@ -71,7 +71,7 @@ export function createToolExecutor(browser, { askUser, signal = null, notebook =
   // was skips the snapshot (the batch's last action reports the page state).
   // The page counts as changed when its URL or its document is new: a form post or
   // a reload can replace the document at the same URL, and then indexes are stale.
-  let call = { brief: false, at: null, pageChanged: false };
+  let call = { brief: false, at: null, pageChanged: false, notes: false };
   const where = async () => [(await browser.currentTab().catch(() => null))?.url ?? null, await browser.documentId?.()].join(' ');
   const observe = async (prefix) => {
     if (call.brief) {
@@ -79,9 +79,9 @@ export function createToolExecutor(browser, { askUser, signal = null, notebook =
       call.pageChanged = true;
     }
     try {
-      // The notebook rides on the latest full observation; older copies are trimmed with it.
-      const notes = notebook?.format();
-      return `${prefix}\n\n${formatSnapshot(await browser.snapshot())}${notes ? `\n\n${notes}` : ''}`;
+      const page = `${prefix}\n\n${formatSnapshot(await browser.snapshot())}`;
+      call.notes = true; // execute adds the notebook after this; compaction keeps only its latest copy
+      return page;
     } catch (err) {
       const tab = await browser.currentTab();
       return `${prefix}\nNow at ${tab.url} — page content unavailable: ${err.message}`;
@@ -236,7 +236,10 @@ export function createToolExecutor(browser, { askUser, signal = null, notebook =
       onNotebookChange();
       return `Saved (${count} note${count === 1 ? '' : 's'}).`;
     },
-    read_notes: async () => notebook?.format() || 'No notes yet.',
+    read_notes: async () => {
+      call.notes = true;
+      return notebook?.entries.length ? '' : 'No notes yet.';
+    },
   };
 
   /** `observe: false` marks an action that is not the last of its turn's batch. */
@@ -245,22 +248,25 @@ export function createToolExecutor(browser, { askUser, signal = null, notebook =
     const handler = !allowed || allowed.has(name) ? handlers[name] : null;
     if (!handler) return { output: `Unknown tool "${name}".`, isError: true };
     const brief = !full && name !== 'read_page';
-    call = { brief, at: brief ? await where() : null, pageChanged: false };
+    call = { brief, at: brief ? await where() : null, pageChanged: false, notes: false };
     try {
       const result = await handler(args ?? {});
       const out = typeof result === 'string' ? { output: result } : result;
-      return call.pageChanged ? { ...out, pageChanged: true } : out;
+      // Tool output can carry page text; the notebook header is added only here.
+      const notes = call.notes ? notebook?.format() : '';
+      const output = [quoteNotebookHeader(out.output ?? ''), notes].filter(Boolean).join('\n\n');
+      return { ...out, output, ...(call.pageChanged ? { pageChanged: true } : {}) };
     } catch (err) {
       return { output: `Error: ${err.message}`, isError: true };
     }
   };
 }
 
-/** Resolves after `ms`, or as soon as the task is stopped. */
 function throwIfStopped(signal) {
   if (signal?.aborted) throw new DOMException('Stopped by user', 'AbortError');
 }
 
+/** Resolves after `ms`, or as soon as the task is stopped. */
 function sleep(ms, signal) {
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, ms);

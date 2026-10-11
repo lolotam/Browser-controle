@@ -5,6 +5,7 @@
 // session later.
 
 import { describeFailure } from '../lib/failure.js';
+import { NOTE_SAVED_ARGS } from './notebook.js';
 
 const LAST_TEXT_CHARS = 3000;
 const STEP_RESULT_CHARS = 160;
@@ -94,7 +95,9 @@ export function handoffMessage(log, reason, notebook = null) {
   const steps = log.steps.slice(-HANDOFF_STEPS);
   const offset = log.steps.length - steps.length;
   if (steps.length) {
-    parts.push(`Steps already done (do not repeat them):\n${steps.map((s, i) => `${offset + i + 1}. ${s.name} ${JSON.stringify(s.args ?? {})} → ${s.result}`).join('\n')}`);
+    // A note's text is in the notebook below; repeating it for each step would double it.
+    const args = (s) => (s.name === 'note' ? NOTE_SAVED_ARGS : JSON.stringify(s.args ?? {}));
+    parts.push(`Steps already done (do not repeat them):\n${steps.map((s, i) => `${offset + i + 1}. ${s.name} ${args(s)} → ${s.result}`).join('\n')}`);
   }
   const notes = notebook?.format();
   if (notes) parts.push(notes);
