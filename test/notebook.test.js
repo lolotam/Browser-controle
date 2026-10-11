@@ -196,3 +196,29 @@ test('the handoff lists note steps without repeating their text', () => {
   assert.equal(text.split('UNIQUE-FINDING').length, 2); // once, in the notebook
   assert.match(text, /note \{"text":"\[saved to the notebook\]"\}/);
 });
+
+test('the latest notebook copy survives when its page observation is trimmed', () => {
+  const book = new Notebook();
+  book.add('Silkworm £23.05', 'https://shop.test/p1');
+  const call = (id, name, args = '{}') => ({ role: 'assistant', content: null, tool_calls: [{ id, type: 'function', function: { name, arguments: args } }] });
+  // note, then a long page with the notebook, then two get_text reads (observations too).
+  const messages = [
+    call('n', 'note', '{"text":"Silkworm £23.05"}'), { role: 'tool', tool_call_id: 'n', content: 'Saved (1 note).' },
+    call('p', 'read_page'), { role: 'tool', tool_call_id: 'p', content: `Page state:\n${'x'.repeat(3000)}\n\n${book.format()}` },
+    call('g1', 'get_text'), { role: 'tool', tool_call_id: 'g1', content: 'y'.repeat(3000) },
+    call('g2', 'get_text'), { role: 'tool', tool_call_id: 'g2', content: 'z'.repeat(3000) },
+  ];
+  compactMessages(messages);
+  assert.match(messages[3].content, /older page state trimmed/);
+  assert.match(messages[3].content, /Silkworm £23\.05 \(from https:\/\/shop\.test\/p1\)/); // the finding is still there
+  assert.equal(messages[0].tool_calls[0].function.arguments, '{"text":"[saved to the notebook]"}');
+
+  const input = [
+    { type: 'function_call', call_id: 'n', name: 'note', arguments: '{"text":"Silkworm £23.05"}' }, { type: 'function_call_output', call_id: 'n', output: 'Saved (1 note).' },
+    { type: 'function_call', call_id: 'p', name: 'read_page', arguments: '{}' }, { type: 'function_call_output', call_id: 'p', output: `Page state:\n${'x'.repeat(3000)}\n\n${book.format()}` },
+    { type: 'function_call', call_id: 'g1', name: 'get_text', arguments: '{}' }, { type: 'function_call_output', call_id: 'g1', output: 'y'.repeat(3000) },
+    { type: 'function_call', call_id: 'g2', name: 'get_text', arguments: '{}' }, { type: 'function_call_output', call_id: 'g2', output: 'z'.repeat(3000) },
+  ];
+  compactInput(input);
+  assert.match(input[3].output, /Silkworm £23\.05/);
+});

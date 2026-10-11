@@ -18,6 +18,17 @@ export function withoutNotebook(text) {
 }
 
 /**
+ * An older page observation cut to `chars`, its notebook section left whole: that
+ * section may be the latest copy, and the notes' own call arguments are already gone.
+ */
+export function trimKeepingNotebook(text, chars) {
+  const at = text.indexOf(NOTEBOOK_HEADER);
+  const page = at < 0 ? text : text.slice(0, at);
+  const cut = page.length > chars + 50 ? `${page.slice(0, chars)}\n…[older page state trimmed]` : page;
+  return at < 0 ? cut : `${cut.trimEnd()}\n\n${text.slice(at)}`;
+}
+
+/**
  * Page text (or a note) quoting the notebook header loses it, so only the agent's
  * own notebook section carries it and compaction can trust where it appears.
  */
