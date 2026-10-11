@@ -942,6 +942,13 @@ try {
 } catch { /* storage blocked */ }
 $('closeSettingsBtn').addEventListener('click', () => toggleSettings(false));
 
+/** The switch as it works: saved on and still granted by Chrome (it can be revoked there). */
+function syncNotifySwitch() {
+  $('notify').checked = false;
+  $('notifyNote').hidden = true;
+  if (settings?.notify) chrome.permissions.contains({ permissions: ['notifications'] }).then((granted) => { $('notify').checked = granted; }, () => {});
+}
+
 function toggleSettings(open) {
   // Closing, saved or not: the notifications permission follows the saved switch. One
   // granted for an edit that was not saved, or for a switch saved off, is given back.
@@ -949,9 +956,9 @@ function toggleSettings(open) {
     if (!settings.notify) chrome.permissions.remove({ permissions: ['notifications'] }).catch(() => {});
     // The switch shows the saved choice again, so a later Save cannot store an
     // unsaved "on" whose permission was just given back.
-    $('notify').checked = Boolean(settings.notify);
-    $('notifyNote').hidden = true;
+    syncNotifySwitch();
   }
+  if (open && settings) syncNotifySwitch(); // the permission may have been revoked in Chrome since
   $('settingsView').hidden = !open;
   $('chatView').hidden = open;
   $('settingsError').hidden = true;
@@ -1004,10 +1011,7 @@ function fillForm() {
   $('allowJavascript').checked = settings.allowJavascript;
   $('showCursor').checked = settings.showCursor;
   $('steerMode').value = settings.steerMode ?? 'next-step';
-  $('notify').checked = false;
-  $('notifyNote').hidden = true;
-  // On only while Chrome still grants the permission: it can be revoked outside the panel.
-  if (settings.notify) chrome.permissions.contains({ permissions: ['notifications'] }).then((granted) => { $('notify').checked = granted; });
+  syncNotifySwitch();
   $('replyLangEnabled').checked = settings.replyLanguage.enabled;
   $('replyLang').value = settings.replyLanguage.language;
   syncReplyLanguage();
