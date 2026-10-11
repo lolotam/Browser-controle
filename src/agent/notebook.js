@@ -46,8 +46,9 @@ export class Notebook {
     return new Notebook(saved && Array.isArray(saved.entries) ? saved : {});
   }
 
+  /** The notebook's length as the model reads it: header, numbering and sources included. */
   get size() {
-    return this.entries.reduce((n, e) => n + e.text.length + (e.url?.length ?? 0), 0);
+    return this.format().length;
   }
 
   /** Adds a note; the oldest notes go first when the notebook is over its cap. */

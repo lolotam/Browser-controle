@@ -109,3 +109,15 @@ test('with no task running, a message or a Send now starts the task', async () =
   assert.equal(runner.inbox.length, 0);
   runner.dispose();
 });
+
+test('one "trying again" notice per task, however often the provider stalls', async () => {
+  const meta = await sessions.createStoredSession('Flaky');
+  const runner = new SessionRunner({ meta, body: await sessions.loadSession(meta.id), color: 'cyan', isTakenByOther: () => null, onSessionsChanged: () => {} });
+  const shown = [];
+  runner.emit = (e) => { if (e.type === 'notice') shown.push(e.kind); };
+  assert.ok(runner.notify({ kind: 'retrying', level: 'warning' }));
+  assert.equal(runner.notify({ kind: 'retrying', level: 'warning' }), null);
+  assert.ok(runner.notify({ kind: 'switched', level: 'error' })); // other notices still show
+  assert.deepEqual(shown, ['retrying', 'switched']);
+  runner.dispose();
+});

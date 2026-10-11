@@ -117,6 +117,12 @@ export function snapshotPage(maxElements, maxTextChars) {
       const shown = squash(el.innerText || (el.shadowRoot && el.shadowRoot.textContent), 40);
       // The heading just above a date names what it dates (a release, a post); headings
       // after it belong to the body. Only what is on screen: a hidden menu's heading names nothing.
+      // A date inside the link or heading that names it (a card "Launch · Yesterday").
+      const around = () => {
+        const box = el.parentElement && el.parentElement.closest('h1, h2, h3, h4, a[href]');
+        if (!box || !box.getClientRects().length || getComputedStyle(box).visibility === 'hidden') return '';
+        return squash(shown ? box.innerText.split(shown).join(' ') : box.innerText, 80);
+      };
       const near = (selector, levels) => {
         for (let a = el.parentElement, i = 0; a && i < levels; a = a.parentElement, i += 1) {
           let closest = '';
@@ -134,7 +140,7 @@ export function snapshotPage(maxElements, maxTextChars) {
       };
       // A heading names only the first date after it, so a page or section heading
       // further up never labels every unrelated date below it.
-      const label = near('h1, h2, h3, h4', 8) || near('a[href]', 4);
+      const label = around() || near('h1, h2, h3, h4', 8) || near('a[href]', 4);
       // The same date rendered twice (desktop and mobile layouts) counts once.
       const key = `${label} ${iso}`;
       if (seen.has(key)) continue;
@@ -254,18 +260,22 @@ export function suggestionAction(index, wanted, mode) {
   }
   const widget = own.at(-1) ?? null; // the widest, where a chosen value shows
 
+  // ARIA ids resolve in the field's own tree first: a field in a shadow root names a
+  // list in that same shadow root, which document.getElementById cannot see.
+  const scope = field.getRootNode();
+  const byId = (id) => (scope.getElementById && scope.getElementById(id)) || document.getElementById(id);
   const containers = [];
   const named = (el) => {
     for (const attr of ['aria-controls', 'aria-owns']) {
       for (const id of (el.getAttribute(attr) || '').split(/\s+/)) {
-        const found = id && document.getElementById(id);
+        const found = id && byId(id);
         if (found) containers.push(found);
       }
     }
   };
   named(field);
   const activeId = field.getAttribute('aria-activedescendant');
-  const active = activeId && document.getElementById(activeId);
+  const active = activeId && byId(activeId);
   if (active) containers.push(active.closest('[role=listbox]') || active.parentElement || active);
   const combo = field.closest('[role=combobox]');
   if (combo && combo !== field) {
@@ -349,6 +359,12 @@ export function pageText(start, length) {
       const shown = squash(el.innerText || (el.shadowRoot && el.shadowRoot.textContent), 40);
       // The heading just above a date names what it dates (a release, a post); headings
       // after it belong to the body. Only what is on screen: a hidden menu's heading names nothing.
+      // A date inside the link or heading that names it (a card "Launch · Yesterday").
+      const around = () => {
+        const box = el.parentElement && el.parentElement.closest('h1, h2, h3, h4, a[href]');
+        if (!box || !box.getClientRects().length || getComputedStyle(box).visibility === 'hidden') return '';
+        return squash(shown ? box.innerText.split(shown).join(' ') : box.innerText, 80);
+      };
       const near = (selector, levels) => {
         for (let a = el.parentElement, i = 0; a && i < levels; a = a.parentElement, i += 1) {
           let closest = '';
@@ -366,7 +382,7 @@ export function pageText(start, length) {
       };
       // A heading names only the first date after it, so a page or section heading
       // further up never labels every unrelated date below it.
-      const label = near('h1, h2, h3, h4', 8) || near('a[href]', 4);
+      const label = around() || near('h1, h2, h3, h4', 8) || near('a[href]', 4);
       // The same date rendered twice (desktop and mobile layouts) counts once.
       const key = `${label} ${iso}`;
       if (seen.has(key)) continue;

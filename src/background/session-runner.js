@@ -87,6 +87,11 @@ export class SessionRunner {
   /** Shows a notice and returns its id; `{ dismiss: id }` withdraws one (a retry that ended). */
   notify = (notice) => {
     if (notice.dismiss) return this.emit({ type: 'notice-dismissed', id: notice.dismiss });
+    // One "trying again" notice per task: a flaky provider must not make it blink.
+    if (notice.kind === 'retrying') {
+      if (this.retryNoticeShown) return null;
+      this.retryNoticeShown = true;
+    }
     const id = crypto.randomUUID();
     this.emit({ type: 'notice', id, ...notice });
     return id;
@@ -163,6 +168,7 @@ export class SessionRunner {
     // Extension API calls reset the service worker idle timer while the model thinks.
     const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo(), KEEP_ALIVE_MS);
     this.notified.clear();
+    this.retryNoticeShown = false;
     this.emit({ type: 'user', text });
     this.emit({ type: 'status', running: true });
     let finished = false;

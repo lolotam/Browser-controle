@@ -943,6 +943,9 @@ try {
 $('closeSettingsBtn').addEventListener('click', () => toggleSettings(false));
 
 function toggleSettings(open) {
+  // Closing, saved or not: the notifications permission follows the saved switch. One
+  // granted for an edit that was not saved, or for a switch saved off, is given back.
+  if (!open && settings && !settings.notify) chrome.permissions.remove({ permissions: ['notifications'] }).catch(() => {});
   $('settingsView').hidden = !open;
   $('chatView').hidden = open;
   $('settingsError').hidden = true;
@@ -1071,7 +1074,7 @@ $('notify').addEventListener('change', async () => {
       $('notifyNote').hidden = false;
     }
   } else {
-    await chrome.permissions.remove({ permissions: ['notifications'] }).catch(() => {});
+    // Given back only once the switch is saved off (see toggleSettings), like the rest of this form.
   }
 });
 
