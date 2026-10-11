@@ -75,22 +75,23 @@ export function gitState(root) {
 }
 
 /**
- * A file's name and bytes, or a directory's files (an untracked nested repository),
- * into the hash; ignored entries are skipped without being read or descended into.
+ * A file into the hash as git would see it: its path, its kind and executable bit,
+ * and its bytes (a symlink: its target). A directory (an untracked nested repository)
+ * adds only its files, like git, which tracks no directories: one holding nothing
+ * but ignored entries adds nothing. Ignored entries are never read or descended into.
  */
 function hashPath(hash, root, rel, ignored) {
   const full = path.join(root, rel);
   const stat = fs.lstatSync(full);
-  hash.update(`\0${rel}\0`);
   if (stat.isDirectory()) {
     const children = fs.readdirSync(full).filter((name) => name !== '.git').sort().map((name) => path.posix.join(rel.split(path.sep).join('/'), name));
     const skip = ignored(children);
     for (const child of children) if (!skip.has(child)) hashPath(hash, root, child, ignored);
-  } else if (stat.isSymbolicLink()) {
-    hash.update(fs.readlinkSync(full));
-  } else {
-    hash.update(fs.readFileSync(full));
+    return;
   }
+  const kind = stat.isSymbolicLink() ? 'link' : stat.mode & 0o111 ? 'exec' : 'file';
+  hash.update(`\0${rel}\0${kind}\0`);
+  hash.update(stat.isSymbolicLink() ? fs.readlinkSync(full) : fs.readFileSync(full));
 }
 
 /** Settings with every key replaced, safe to record. */

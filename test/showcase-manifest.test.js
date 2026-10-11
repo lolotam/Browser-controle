@@ -73,7 +73,7 @@ test('a new file git does not track yet changes the code hash; an ignored one do
   const git = (...a) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { cwd: repo });
   try {
     git('init', '-q');
-    fsm.writeFileSync(p.join(repo, '.gitignore'), '.env*\n');
+    fsm.writeFileSync(p.join(repo, '.gitignore'), '.env*\nnode_modules/\n');
     fsm.writeFileSync(p.join(repo, 'main.js'), 'import "./helper.js";\n');
     git('add', '.');
     git('commit', '-qm', 'base');
@@ -101,6 +101,17 @@ test('a new file git does not track yet changes the code hash; an ignored one do
     assert.equal(gitState(repo).diff, before);
     fsm.writeFileSync(p.join(repo, 'nested', '.env.local'), 'KEY=2');
     assert.equal(gitState(repo).diff, before);
+    // A new folder holding only ignored files adds nothing either.
+    fsm.mkdirSync(p.join(repo, 'nested', 'node_modules', 'pkg'), { recursive: true });
+    fsm.writeFileSync(p.join(repo, 'nested', 'node_modules', 'pkg', 'i.js'), 'x');
+    fsm.mkdirSync(p.join(repo, 'nested', 'runtime'));
+    fsm.writeFileSync(p.join(repo, 'nested', 'runtime', '.env.run'), 'x');
+    assert.equal(gitState(repo).diff, before);
+    // The executable bit is part of the code, as git records it.
+    if (process.platform !== 'win32') {
+      fsm.chmodSync(p.join(repo, 'helper.js'), 0o755);
+      assert.notEqual(gitState(repo).diff, before);
+    }
   } finally {
     fsm.rmSync(repo, { recursive: true, force: true });
   }
