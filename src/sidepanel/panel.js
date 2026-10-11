@@ -942,11 +942,19 @@ try {
 } catch { /* storage blocked */ }
 $('closeSettingsBtn').addEventListener('click', () => toggleSettings(false));
 
+// Numbers each permission check; a newer check or a click on the switch makes an
+// older answer stale, so it can never undo what the user just chose.
+let notifyCheck = 0;
+
 /** The switch as it works: saved on and still granted by Chrome (it can be revoked there). */
 function syncNotifySwitch() {
+  const check = ++notifyCheck;
   $('notify').checked = false;
   $('notifyNote').hidden = true;
-  if (settings?.notify) chrome.permissions.contains({ permissions: ['notifications'] }).then((granted) => { $('notify').checked = granted; }, () => {});
+  if (!settings?.notify) return;
+  chrome.permissions.contains({ permissions: ['notifications'] }).then((granted) => {
+    if (check === notifyCheck) $('notify').checked = granted;
+  }, () => {});
 }
 
 function toggleSettings(open) {
@@ -1075,6 +1083,7 @@ $('replyLangEnabled').addEventListener('change', syncReplyLanguage);
 // The permission is asked for from the click itself (Chrome needs the gesture), and
 // given back when the switch goes off. Notifications need both the switch and it.
 $('notify').addEventListener('change', async () => {
+  notifyCheck += 1; // the user's choice wins over any check still waiting
   const box = $('notify');
   $('notifyNote').hidden = true;
   if (box.checked) {
