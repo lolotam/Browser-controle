@@ -4,7 +4,7 @@
 
 import { runAgent } from '../agent/agent.js';
 import { createFastAsk, createModelSession, modelSessionKey } from '../agent/model-session.js';
-import { describeTabContext } from '../agent/prompt.js';
+import { describeTabContext, replyLanguageReminder } from '../agent/prompt.js';
 import { createToolExecutor, toolDefinitions } from '../agent/tools.js';
 import { BrowserController } from '../browser/controller.js';
 import { Notebook } from '../agent/notebook.js';
@@ -25,6 +25,9 @@ export class SessionRunner {
     this.transcript = body.transcript ?? [];
     this.storedLog = body.log;
     this.notebook = Notebook.from(body.notebook); // kept for follow-up tasks and reopening
+    // Messages sent while a task runs: { id, text, mode, now }. See steering().
+    this.inbox = Array.isArray(body.pending) ? body.pending : [];
+    this.turnAbort = null;
     this.onSessionsChanged = onSessionsChanged;
     this.ports = new Set();
     this.session = null;
@@ -48,7 +51,7 @@ export class SessionRunner {
   /** `early` holds what the panel sent before this session finished loading. */
   attach(port, early = []) {
     try {
-      port.postMessage({ type: 'replay', events: this.transcript, running: this.running, question: this.pendingQuestion?.question ?? null });
+      port.postMessage({ type: 'replay', events: this.transcript, running: this.running, question: this.pendingQuestion?.question ?? null, pending: this.inbox });
     } catch {
       // The panel closed or moved on while this session loaded. Keeping its closed
       // port would make every later emit throw before reaching the next panel.
@@ -62,6 +65,9 @@ export class SessionRunner {
 
   receive(msg) {
     if (msg.type === 'run') this.start(msg.text);
+    else if (msg.type === 'steer') this.steer(msg.text, msg.mode);
+    else if (msg.type === 'steer-now') this.sendNow(msg.id);
+    else if (msg.type === 'steer-cancel') this.dropMessage(msg.id);
     else if (msg.type === 'stop') this.stop();
     else if (msg.type === 'answer') this.answer(msg.text);
     else if (msg.type === 'dismiss-notice') this.emit({ type: 'notice-dismissed', id: msg.id });
@@ -86,6 +92,67 @@ export class SessionRunner {
     return id;
   };
 
+  /**
+   * A message sent while the task runs. "next-step": the model reads it before its
+   * next turn; "interrupt": its current turn is cut short to read it now; "queue":
+   * it waits for the task to finish and then starts the follow-up task.
+   */
+  steer(text, mode = 'next-step') {
+    const clean = String(text ?? '').trim();
+    if (!clean) return;
+    if (!this.running) {
+      this.start(clean);
+      return;
+    }
+    const item = { id: crypto.randomUUID(), text: clean, mode: ['interrupt', 'queue'].includes(mode) ? mode : 'next-step', now: mode === 'interrupt' };
+    this.inbox.push(item);
+    this.emit({ type: 'pending-added', item });
+    this.scheduleSave();
+    if (item.now) this.turnAbort?.abort();
+  }
+
+  /** "Send now" on a waiting message: into the running task at once, or as a new task. */
+  sendNow(id) {
+    const item = this.inbox.find((m) => m.id === id);
+    if (!item) return;
+    if (!this.running) {
+      this.dropMessage(id);
+      this.start(item.text);
+      return;
+    }
+    item.now = true;
+    this.turnAbort?.abort();
+  }
+
+  dropMessage(id) {
+    const before = this.inbox.length;
+    this.inbox = this.inbox.filter((m) => m.id !== id);
+    if (this.inbox.length === before) return;
+    this.emit({ type: 'pending-removed', id });
+    this.scheduleSave();
+  }
+
+  /** What runAgent uses to deliver messages (see runAgent's `steering`). */
+  steering() {
+    const due = (m) => m.now || m.mode !== 'queue';
+    return {
+      waiting: () => this.inbox.some(due),
+      take: () => {
+        const ready = this.inbox.filter(due);
+        for (const m of ready) {
+          this.dropMessage(m.id);
+          this.emit({ type: 'user', text: m.text, steer: true });
+        }
+        // The reply language is restated with each message, as with each task.
+        return ready.map((m) => m.text + replyLanguageReminder(this.settings?.replyLanguage));
+      },
+      turnSignal: (signal) => {
+        this.turnAbort = new AbortController();
+        return AbortSignal.any([signal, this.turnAbort.signal]);
+      },
+    };
+  }
+
   async start(text) {
     if (this.running) {
       this.emit({ type: 'error', message: 'A task is already running in this session. Stop it first.' });
@@ -98,6 +165,7 @@ export class SessionRunner {
     this.notified.clear();
     this.emit({ type: 'user', text });
     this.emit({ type: 'status', running: true });
+    let finished = false;
     try {
       if (!this.titled) await this.nameAfter(text);
       this.onSessionsChanged(); // after naming, so other panels list it with its title
@@ -115,11 +183,13 @@ export class SessionRunner {
         fastLayer,
         session: this.session,
         execute,
-        task: text + describeTabContext(tab),
+        task: text + describeTabContext(tab) + replyLanguageReminder(settings.replyLanguage),
         maxSteps: Math.max(1, Number(settings.maxSteps) || 40),
         signal: abort.signal,
         emit: (event) => this.emit(event),
+        steering: this.steering(),
       });
+      finished = true;
     } catch (err) {
       this.emit(err.name === 'AbortError' ? { type: 'stopped' } : { type: 'error', message: err.message });
       if (err.name !== 'AbortError') this.transition('failed'); // stopped by the user: they know
@@ -130,8 +200,16 @@ export class SessionRunner {
       this.clearAskNotices();
       await this.browser.overlay.end();
       await this.browser.detachAll();
+      this.turnAbort = null;
       this.emit({ type: 'status', running: false });
       this.onSessionsChanged();
+    }
+    // Messages still waiting become the follow-up task, sent together. After a Stop or
+    // an error they stay, so the user decides.
+    if (finished && this.inbox.length && !this.disposed) {
+      const next = this.inbox.map((m) => m.text).join('\n\n');
+      for (const m of [...this.inbox]) this.dropMessage(m.id);
+      this.start(next);
     }
   }
 
@@ -219,6 +297,6 @@ export class SessionRunner {
   async save() {
     clearTimeout(this.saveTimer);
     if (this.disposed) return;
-    await store.saveSession(this.id, { transcript: this.transcript, log: this.session?.log ?? this.storedLog, groupId: this.browser.groupId, notebook: this.notebook.toJSON() });
+    await store.saveSession(this.id, { transcript: this.transcript, log: this.session?.log ?? this.storedLog, groupId: this.browser.groupId, notebook: this.notebook.toJSON(), pending: this.inbox });
   }
 }

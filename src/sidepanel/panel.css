@@ -215,6 +215,13 @@ main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .totals { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11px; }
 
 #composer { padding: 8px 10px 10px; }
+/* Messages sent while the agent works, waiting to be read. */
+.pending { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pending li { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px dashed var(--border-strong); border-radius: 8px; font-size: 12px; background: var(--surface-2); }
+.pending .text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pending .chip { flex: none; color: var(--muted); font-size: 11px; }
+.pending button { flex: none; background: none; border: 0; padding: 2px 4px; cursor: pointer; color: var(--accent-text); font: inherit; }
+.msg.user.steer::after { content: attr(data-tag); display: block; margin-top: 2px; font-size: 11px; color: var(--muted); }
 .composer-box {
   display: flex; align-items: flex-end; gap: 6px; border: 1px solid var(--border-strong);
   border-radius: 12px; padding: 6px; background: var(--bg); transition: border-color .12s;
