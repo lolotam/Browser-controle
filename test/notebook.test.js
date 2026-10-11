@@ -229,3 +229,11 @@ test('the cap counts the notebook as the model reads it, numbering and sources i
   assert.ok(book.format().length <= NOTEBOOK_MAX_CHARS, `formatted ${book.format().length}`);
   assert.ok(book.dropped);
 });
+
+test('a notebook saved under the old count fits the cap as soon as it is reopened', () => {
+  const entries = Array.from({ length: 400 }, (_, i) => ({ text: `item ${i}`, url: `https://shop.test/items/${i}`, at: i }));
+  const book = Notebook.from({ entries, dropped: false });
+  assert.ok(book.format().length <= NOTEBOOK_MAX_CHARS);
+  assert.equal(book.dropped, true);
+  assert.match(book.format(), /item 399/); // the newest notes stay
+});
