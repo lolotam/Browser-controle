@@ -276,7 +276,7 @@ export class SessionRunner {
     if (this.notified.has(key)) return;
     this.notified.add(key);
     const settings = this.settings ?? (await loadSettings().catch(() => null));
-    const id = await notifyTransition({ kind, sessionId: this.id, tabId: this.browser.tabId, settings });
+    const id = await notifyTransition({ kind, sessionId: this.id, tabId: this.browser.tabId, groupId: this.browser.groupId, settings });
     if (kind === 'ask' && id) {
       if (this.pendingQuestion) this.askNotices.push(id);
       else clearNotification(id); // answered while the notification was being shown
