@@ -90,6 +90,7 @@
       </div>
     </section>
     <form id="composer">
+      <ul id="pending" class="pending" hidden></ul>
       <div class="composer-box">
         <textarea id="input" rows="2" dir="auto" data-i18n-placeholder="composer.placeholder"></textarea>
         <button type="button" class="round danger" id="stopBtn" data-i18n-title="composer.stop" hidden>
@@ -234,6 +235,14 @@
         <label class="check"><input type="checkbox" id="showCursor" /> <span data-i18n="settings.showCursor"></span></label>
         <label class="check"><input type="checkbox" id="notify" /> <span data-i18n="settings.notify"></span></label>
         <p class="muted" id="notifyNote" data-i18n="settings.notifyDenied" hidden></p>
+        <label class="field">
+          <span data-i18n="settings.steerMode"></span>
+          <select id="steerMode">
+            <option value="next-step" data-i18n="steer.nextStep"></option>
+            <option value="interrupt" data-i18n="steer.interrupt"></option>
+            <option value="queue" data-i18n="steer.queue"></option>
+          </select>
+        </label>
       </div>
 
       <div class="card">

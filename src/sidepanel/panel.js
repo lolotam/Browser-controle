@@ -16,7 +16,7 @@ const request = async (type, payload = {}) => {
   return res.result;
 };
 
-const ui = { running: false, question: null, liveText: null, liveReasoning: null, trace: null, steps: new Map(), replayed: false, notices: [], stats: newStats() };
+const ui = { pending: [], running: false, question: null, liveText: null, liveReasoning: null, trace: null, steps: new Map(), replayed: false, notices: [], stats: newStats() };
 const MAX_NOTICES = 3;
 let settings = null;
 let presets = {};
@@ -74,13 +74,26 @@ function onEvent(event) {
       }
       setRunning(event.running);
       if (event.question) setQuestion(event.question);
+      ui.pending = event.pending ?? [];
+      renderPending();
       break;
     case 'status':
       setRunning(event.running);
       break;
-    case 'user':
-      add('msg user', event.text);
-      if (!event.answer) ui.stats = newStats(event.at); // an answer to ask_user is part of the task
+    case 'user': {
+      const node = add(event.steer ? 'msg user steer' : 'msg user', event.text);
+      if (event.steer) node.dataset.tag = t('msg.steered');
+      // An answer to ask_user or a message sent while working is part of the task.
+      if (!event.answer && !event.steer) ui.stats = newStats(event.at);
+      break;
+    }
+    case 'pending-added':
+      ui.pending.push(event.item);
+      renderPending();
+      break;
+    case 'pending-removed':
+      ui.pending = ui.pending.filter((m) => m.id !== event.id);
+      renderPending();
       break;
     case 'turn-end':
       addTurn(event);
@@ -258,6 +271,8 @@ function totalsLine(end) {
 
 function clearMessages() {
   $('messages').querySelectorAll('.msg, .trace').forEach((n) => n.remove());
+  ui.pending = [];
+  renderPending();
   ui.steps.clear();
   ui.trace = null;
   ui.notices = [];
@@ -287,6 +302,32 @@ function renderNotices() {
   }));
 }
 
+const PENDING_CHIP = { 'next-step': 'pending.nextStep', interrupt: 'pending.interrupt', queue: 'pending.queue' };
+
+/** Messages waiting to be read, above the composer, each with Send now and Remove. */
+function renderPending() {
+  const list = $('pending');
+  list.hidden = !ui.pending.length;
+  list.replaceChildren(...ui.pending.map((m) => {
+    const row = document.createElement('li');
+    const text = span('text', m.text);
+    text.dir = 'auto';
+    text.title = m.text;
+    row.append(text, span('chip', t(m.now ? 'pending.interrupt' : PENDING_CHIP[m.mode] ?? 'pending.nextStep')));
+    if (!m.now) {
+      const now = Object.assign(document.createElement('button'), { type: 'button', textContent: '⚡', title: t('pending.sendNow') });
+      now.setAttribute('aria-label', t('pending.sendNow'));
+      now.addEventListener('click', () => send({ type: 'steer-now', id: m.id }));
+      row.append(now);
+    }
+    const remove = Object.assign(document.createElement('button'), { type: 'button', textContent: '×', title: t('pending.remove') });
+    remove.setAttribute('aria-label', t('pending.remove'));
+    remove.addEventListener('click', () => send({ type: 'steer-cancel', id: m.id }));
+    row.append(remove);
+    return row;
+  }));
+}
+
 function setQuestion(question) {
   ui.question = question;
   add('msg ask', question);
@@ -299,7 +340,7 @@ function setRunning(running) {
   ui.running = running;
   $('statusDot').classList.toggle('running', running);
   $('stopBtn').hidden = !running;
-  $('sendBtn').hidden = running && !ui.question;
+  $('sendBtn').hidden = false; // while running, a message steers the task (see steerMode)
   if (!running) {
     ui.question = null;
     $('hint').textContent = '';
@@ -323,8 +364,7 @@ $('composer').addEventListener('submit', (e) => {
     $('hint').textContent = t('status.running');
     $('sendBtn').hidden = true;
   } else if (ui.running) {
-    $('hint').textContent = t('status.busy');
-    return;
+    send({ type: 'steer', text, mode: settings?.steerMode ?? 'next-step' });
   } else {
     send({ type: 'run', text });
   }
@@ -860,6 +900,7 @@ function fillForm() {
   $('vision').checked = settings.vision;
   $('allowJavascript').checked = settings.allowJavascript;
   $('showCursor').checked = settings.showCursor;
+  $('steerMode').value = settings.steerMode ?? 'next-step';
   $('notify').checked = false;
   $('notifyNote').hidden = true;
   // On only while Chrome still grants the permission: it can be revoked outside the panel.
@@ -910,6 +951,7 @@ function readForm() {
   next.vision = $('vision').checked;
   next.allowJavascript = $('allowJavascript').checked;
   next.showCursor = $('showCursor').checked;
+  next.steerMode = $('steerMode').value;
   next.notify = $('notify').checked;
   next.replyLanguage = { enabled: $('replyLangEnabled').checked, language: $('replyLang').value };
   next.keys = keyStore.snapshot();

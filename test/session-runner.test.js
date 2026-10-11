@@ -61,3 +61,49 @@ test('a panel that left while the session loaded does not swallow the next panel
   assert.equal(runner.ports.size, 1);
   runner.dispose();
 });
+
+test('messages sent while a task runs: next step, queued, sent now, removed', async () => {
+  const meta = await sessions.createStoredSession('Steered');
+  const runner = new SessionRunner({ meta, body: await sessions.loadSession(meta.id), color: 'cyan', isTakenByOther: () => null, onSessionsChanged: () => {} });
+  const events = [];
+  runner.emit = (e) => events.push(e);
+  runner.abort = new AbortController(); // a task is running
+  const steering = runner.steering();
+  const signal = steering.turnSignal(runner.abort.signal);
+
+  runner.steer('use the blue one', 'next-step');
+  runner.steer('then email me', 'queue');
+  assert.deepEqual(events.filter((e) => e.type === 'pending-added').map((e) => e.item.mode), ['next-step', 'queue']);
+  assert.equal(steering.waiting(), true);
+  assert.deepEqual(steering.take(), ['use the blue one']); // the queued one waits for the task to end
+  assert.equal(steering.waiting(), false);
+  assert.deepEqual(events.filter((e) => e.type === 'user' && e.steer).map((e) => e.text), ['use the blue one']);
+
+  // Send now: the waiting message becomes due and the model's turn is cut short.
+  const queued = runner.inbox[0];
+  runner.sendNow(queued.id);
+  assert.equal(signal.aborted, true);
+  assert.equal(steering.waiting(), true);
+  assert.deepEqual(steering.take(), ['then email me']);
+
+  runner.steer('never mind', 'queue');
+  runner.dropMessage(runner.inbox[0].id);
+  assert.equal(runner.inbox.length, 0);
+  assert.ok(events.some((e) => e.type === 'pending-removed'));
+  runner.abort = null;
+  runner.dispose();
+});
+
+test('with no task running, a message or a Send now starts the task', async () => {
+  const meta = await sessions.createStoredSession('Idle');
+  const runner = new SessionRunner({ meta, body: await sessions.loadSession(meta.id), color: 'cyan', isTakenByOther: () => null, onSessionsChanged: () => {} });
+  const started = [];
+  runner.start = (text) => started.push(text);
+  runner.emit = () => {};
+  runner.steer('find hotels', 'queue');
+  runner.inbox.push({ id: 'kept', text: 'left after a Stop', mode: 'queue', now: false });
+  runner.sendNow('kept');
+  assert.deepEqual(started, ['find hotels', 'left after a Stop']);
+  assert.equal(runner.inbox.length, 0);
+  runner.dispose();
+});
