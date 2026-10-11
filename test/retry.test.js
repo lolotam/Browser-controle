@@ -153,3 +153,14 @@ test('all pauses of one request share the 30 s wait budget', async () => {
   assert.deepEqual(waits, [25000]); // a second 25 s pause would pass 30 s in all: hand over instead
   assert.equal(calls, 2);
 });
+
+test('a pause after a lost connection is announced as a connection problem', async () => {
+  const notices = [];
+  let calls = 0;
+  await withRetry(async () => {
+    calls += 1;
+    if (calls < 2) throw Object.assign(new TypeError('fetch failed'), { network: true });
+    return 'ok';
+  }, { wait: async () => {}, random: () => 1, notify: (n) => { notices.push(n); return 'id'; } });
+  assert.equal(notices[0].code, 'network');
+});

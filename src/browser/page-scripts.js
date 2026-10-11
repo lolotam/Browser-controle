@@ -120,8 +120,11 @@ export function snapshotPage(maxElements, maxTextChars) {
       const near = (selector, levels) => {
         for (let a = el.parentElement, i = 0; a && i < levels; a = a.parentElement, i += 1) {
           let closest = '';
+          const dated = [...a.querySelectorAll('[datetime]')].filter((d) => d !== el);
           for (const named of a.querySelectorAll(selector)) {
             if (named === el || named.contains(el) || !(named.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+            // Another date between them means this heading names that one, not this.
+            if (dated.some((d) => (named.compareDocumentPosition(d) & Node.DOCUMENT_POSITION_FOLLOWING) && (d.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING))) continue;
             if (!named.getClientRects().length || getComputedStyle(named).visibility === 'hidden') continue;
             closest = squash(named.innerText, 80) || closest;
           }
@@ -129,11 +132,14 @@ export function snapshotPage(maxElements, maxTextChars) {
         }
         return '';
       };
+      // A heading names only the first date after it, so a page or section heading
+      // further up never labels every unrelated date below it.
       const label = near('h1, h2, h3, h4', 8) || near('a[href]', 4);
-      const line = `${label || '(no label)'} · ${shown || '—'} — ${iso}`;
-      if (seen.has(line)) continue;
-      seen.add(line);
-      lines.push(line);
+      // The same date rendered twice (desktop and mobile layouts) counts once.
+      const key = `${label} ${iso}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lines.push(`${label || '(no label)'} · ${shown || '—'} — ${iso}`);
     }
     return lines;
   };
@@ -305,17 +311,17 @@ export function suggestionAction(index, wanted, mode) {
   }
   if (mode === 'verify') {
     // A plain autocomplete shows the choice as the field's value once its list closed;
-    // a chip or single-value widget shows it as text in the widget, outside any list.
+    // a chip or single-value widget shows it as an element whose own text is exactly
+    // the option. Not a label or heading ("City" when choosing City), not a longer
+    // chip ("New York" when choosing York), and nothing inside an open list.
     if (norm(field.value) === target && !matches.length) return { ok: true };
     const root = widget || field.parentElement;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    let text = '';
-    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-      const host = n.parentElement;
-      if (!host || host.closest('[role=listbox], [role=option], [id*="-option-"]') || !visible(host)) continue;
-      text += ` ${n.nodeValue}`;
+    for (const host of root.querySelectorAll('*')) {
+      if (host.matches('label, legend, h1, h2, h3, h4, h5, h6') || host.closest('[role=listbox], [role=option], [id*="-option-"]') || !visible(host)) continue;
+      const own = [...host.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.nodeValue).join(' ');
+      if (norm(own) === target) return { ok: true };
     }
-    return { ok: norm(text).includes(target) };
+    return { ok: false };
   }
   return { error: `Unknown suggestion action ${mode}` };
 }
@@ -346,8 +352,11 @@ export function pageText(start, length) {
       const near = (selector, levels) => {
         for (let a = el.parentElement, i = 0; a && i < levels; a = a.parentElement, i += 1) {
           let closest = '';
+          const dated = [...a.querySelectorAll('[datetime]')].filter((d) => d !== el);
           for (const named of a.querySelectorAll(selector)) {
             if (named === el || named.contains(el) || !(named.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+            // Another date between them means this heading names that one, not this.
+            if (dated.some((d) => (named.compareDocumentPosition(d) & Node.DOCUMENT_POSITION_FOLLOWING) && (d.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING))) continue;
             if (!named.getClientRects().length || getComputedStyle(named).visibility === 'hidden') continue;
             closest = squash(named.innerText, 80) || closest;
           }
@@ -355,11 +364,14 @@ export function pageText(start, length) {
         }
         return '';
       };
+      // A heading names only the first date after it, so a page or section heading
+      // further up never labels every unrelated date below it.
       const label = near('h1, h2, h3, h4', 8) || near('a[href]', 4);
-      const line = `${label || '(no label)'} · ${shown || '—'} — ${iso}`;
-      if (seen.has(line)) continue;
-      seen.add(line);
-      lines.push(line);
+      // The same date rendered twice (desktop and mobile layouts) counts once.
+      const key = `${label} ${iso}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lines.push(`${label || '(no label)'} · ${shown || '—'} — ${iso}`);
     }
     return lines;
   };

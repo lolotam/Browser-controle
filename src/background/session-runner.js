@@ -10,7 +10,7 @@ import { BrowserController } from '../browser/controller.js';
 import { Notebook } from '../agent/notebook.js';
 import { createFastLayer } from '../fast/fast-layer.js';
 import { effectiveSettings, loadSettings } from '../lib/settings.js';
-import { notifyTransition } from './notifications.js';
+import { clearNotification, notifyTransition } from './notifications.js';
 import * as store from '../sessions/store.js';
 
 const SAVE_DELAY_MS = 500;
@@ -35,6 +35,7 @@ export class SessionRunner {
     this.disposed = false;
     this.notified = new Set(); // transitions of the current task already notified
     this.asks = 0;
+    this.askNotices = []; // "needs your answer" notifications still shown
     this.settings = null;
     this.browser = new BrowserController({ title: meta.title || 'Postora', color, isTakenByOther: (tab) => isTakenByOther(this.id, tab) });
     this.browser.groupId = body.groupId ?? null;
@@ -126,6 +127,7 @@ export class SessionRunner {
       clearInterval(keepAlive);
       this.abort = null;
       this.pendingQuestion = null;
+      this.clearAskNotices();
       await this.browser.overlay.end();
       await this.browser.detachAll();
       this.emit({ type: 'status', running: false });
@@ -186,6 +188,7 @@ export class SessionRunner {
     const pending = this.pendingQuestion;
     if (!pending) return;
     this.pendingQuestion = null;
+    this.clearAskNotices();
     this.emit({ type: 'user', text, answer: true });
     pending.resolve(text);
   }
@@ -195,7 +198,16 @@ export class SessionRunner {
     if (this.notified.has(key)) return;
     this.notified.add(key);
     const settings = this.settings ?? (await loadSettings().catch(() => null));
-    await notifyTransition({ kind, sessionId: this.id, tabId: this.browser.tabId, settings });
+    const id = await notifyTransition({ kind, sessionId: this.id, tabId: this.browser.tabId, settings });
+    if (kind === 'ask' && id) {
+      if (this.pendingQuestion) this.askNotices.push(id);
+      else clearNotification(id); // answered while the notification was being shown
+    }
+  }
+
+  /** The question was answered or the task ended: its notifications no longer apply. */
+  clearAskNotices() {
+    for (const id of this.askNotices.splice(0)) clearNotification(id);
   }
 
   scheduleSave() {

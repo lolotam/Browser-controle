@@ -21,6 +21,7 @@ export function createProviderForm(root, { request, getPresets, keyStore }) {
   let customKey = '';
 
   function fill(s) {
+    latestLoad += 1; // a model list still loading belongs to the values being replaced
     saved = { provider: s.provider, chatgpt: { ...s.chatgpt }, compatible: { ...s.compatible } };
     f('preset').innerHTML = Object.entries(getPresets()).map(([id, p]) => `<option value="${id}">${escapeAttr(p.label)}</option>`).join('');
     f('provider').value = s.provider;
@@ -69,8 +70,10 @@ export function createProviderForm(root, { request, getPresets, keyStore }) {
 
   async function loadModels(showErrors = false) {
     const draft = read();
-    if (draft.provider === 'chatgpt' && !(await request('auth-status')).connected) return;
+    // Numbered before any wait, so a slower earlier load (or a fill since) never wins.
     const load = ++latestLoad;
+    if (draft.provider === 'chatgpt' && !(await request('auth-status')).connected) return;
+    if (load !== latestLoad) return;
     f('modelInfo').textContent = t('model.loading');
     try {
       const list = await request('list-models', { settings: draft });

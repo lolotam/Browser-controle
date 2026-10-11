@@ -55,9 +55,10 @@ export async function openFromNotification(id, { sessionExists, bindTab }) {
   if (!route || !(await sessionExists(route.sessionId).catch(() => false))) return 'gone';
   const tab = Number.isInteger(route.tabId) ? await chrome.tabs.get(route.tabId).catch(() => null) : null;
   if (!tab) return 'tab-closed';
+  // Bound first: activating the tab makes an open panel look up the tab's session.
+  await bindTab(tab.id, route.sessionId);
   await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
   await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
-  await bindTab(tab.id, route.sessionId);
   try {
     // Chrome may refuse outside a user gesture; the tab is in front either way.
     await chrome.sidePanel.open({ tabId: tab.id });
@@ -65,6 +66,13 @@ export async function openFromNotification(id, { sessionExists, bindTab }) {
   } catch {
     return 'focused';
   }
+}
+
+/** Withdraws a notification that no longer applies (a question that was answered). */
+export async function clearNotification(id) {
+  if (!id) return;
+  await takeRoute(id).catch(() => {});
+  await chrome.notifications?.clear(id)?.catch?.(() => {});
 }
 
 /** A notification dismissed without a click. */

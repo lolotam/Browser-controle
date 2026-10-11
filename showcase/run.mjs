@@ -172,8 +172,11 @@ function settingsFor(model) {
 
 function metricsOf(events) {
   const tools = events.filter((e) => e.type === 'tool-start');
-  const usage = events.filter((e) => e.type === 'usage').map((e) => e.usage ?? {});
-  const sum = (key) => usage.reduce((n, u) => n + (Number(u[key]) || 0), 0);
+  // Main-model tokens: normalised on each turn-end; transcripts from before turn-end
+  // events carry them as usage events in the Chat Completions shape.
+  const turns = events.filter((e) => e.type === 'turn-end').map((e) => e.usage).filter(Boolean);
+  const legacy = turns.length ? [] : events.filter((e) => e.type === 'usage' && !e.source).map((e) => e.usage ?? {});
+  const sum = (key, old) => turns.reduce((n, u) => n + (Number(u[key]) || 0), 0) + legacy.reduce((n, u) => n + (Number(u[old]) || 0), 0);
   return {
     llmTurns: events.filter((e) => e.type === 'thinking').length,
     actions: tools.length,
@@ -182,8 +185,8 @@ function metricsOf(events) {
     failedActions: events.filter((e) => e.type === 'tool-end' && !e.ok).length,
     screenshots: tools.filter((e) => e.name === 'screenshot').length,
     tools: Object.fromEntries([...new Set(tools.map((e) => e.name))].map((n) => [n, tools.filter((e) => e.name === n).length])),
-    promptTokens: sum('prompt_tokens') || null,
-    completionTokens: sum('completion_tokens') || null,
+    promptTokens: sum('input', 'prompt_tokens') || null,
+    completionTokens: sum('output', 'completion_tokens') || null,
     notices: events.filter((e) => e.type === 'notice').map((e) => e.kind ?? e.level),
   };
 }

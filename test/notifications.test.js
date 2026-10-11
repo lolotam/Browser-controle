@@ -63,11 +63,11 @@ test('a click after a worker restart still finds the tab, brings it forward and 
   const id = await notifyTransition({ kind: 'ask', sessionId: 's1', tabId: 7, settings: on });
   // A restarted worker keeps nothing in memory; the route is in storage.session.
   const bound = [];
-  const outcome = await openFromNotification(id, { sessionExists: async () => true, bindTab: async (tabId, sessionId) => bound.push([tabId, sessionId]) });
+  const outcome = await openFromNotification(id, { sessionExists: async () => true, bindTab: async (tabId, sessionId) => bound.push([tabId, sessionId, state.activated.length]) });
   assert.equal(outcome, 'opened');
   assert.deepEqual(state.focused, [3]);
   assert.deepEqual(state.activated, [7]);
-  assert.deepEqual(bound, [[7, 's1']]);
+  assert.deepEqual(bound, [[7, 's1', 0]]); // bound before the tab was activated
   assert.deepEqual(state.panels, [7]);
   assert.equal(await openFromNotification(id, { sessionExists: async () => true, bindTab: async () => {} }), 'gone'); // used once
 });
@@ -129,5 +129,29 @@ test('the runner notifies each transition of a task once', async () => {
   runner.emit({ type: 'final', report: 'ok', success: true });
   await new Promise((r) => setTimeout(r, 50));
   assert.deepEqual(state.created.map((n) => n.message), ['A task needs your answer', 'A task needs your answer', 'A task finished']);
+  runner.dispose();
+});
+
+test('an answered question withdraws its notification', async () => {
+  const local = {};
+  chrome.storage.local = {
+    get: async (keys) => Object.fromEntries([].concat(keys).filter((k) => k in local).map((k) => [k, structuredClone(local[k])])),
+    set: async (obj) => Object.assign(local, structuredClone(obj)),
+    remove: async () => {},
+  };
+  const { SessionRunner } = await import('../src/background/session-runner.js');
+  const sessions = await import('../src/sessions/store.js');
+  const meta = await sessions.createStoredSession('Asked');
+  const runner = new SessionRunner({ meta, body: await sessions.loadSession(meta.id), color: 'cyan', isTakenByOther: () => null, onSessionsChanged: () => {} });
+  runner.settings = on;
+  runner.browser.tabId = 7;
+  const stop = new AbortController();
+  const answered = runner.askUser('Pay?', stop.signal);
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(state.created.length, 1);
+  runner.answer('yes');
+  assert.equal(await answered, 'yes');
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(state.cleared, [state.created[0].id]);
   runner.dispose();
 });

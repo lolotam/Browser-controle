@@ -121,7 +121,7 @@ export async function withRetry(attempt, { signal, deadline = Date.now() + MODEL
   try {
     return await retryLoop(attempt, { signal, deadline, provider, wait, random, onWait, onPause: (err) => {
       if (notice !== null || !notify) return;
-      notice = notify({ level: 'warning', kind: 'retrying', code: err.status === 429 ? 'rate-limit' : 'server', reason: `HTTP ${err.status ?? 'network'}`, detail: String(err.detail ?? err.message ?? '').slice(0, 300) }) ?? false;
+      notice = notify({ level: 'warning', kind: 'retrying', code: err.network ? 'network' : err.status === 429 ? 'rate-limit' : 'server', reason: `HTTP ${err.status ?? 'network'}`, detail: String(err.detail ?? err.message ?? '').slice(0, 300) }) ?? false;
     } });
   } finally {
     if (notice) notify({ dismiss: notice });
