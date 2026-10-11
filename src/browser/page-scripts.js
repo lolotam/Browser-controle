@@ -118,10 +118,14 @@ export function snapshotPage(maxElements, maxTextChars) {
       // The heading just above a date names what it dates (a release, a post); headings
       // after it belong to the body. Only what is on screen: a hidden menu's heading names nothing.
       // A date inside the link or heading that names it (a card "Launch · Yesterday").
+      // Walks outward: a date-only link inside its heading gives nothing, the heading does.
       const around = () => {
-        const box = el.parentElement && el.parentElement.closest('h1, h2, h3, h4, a[href]');
-        if (!box || !box.getClientRects().length || getComputedStyle(box).visibility === 'hidden') return '';
-        return squash(shown ? box.innerText.split(shown).join(' ') : box.innerText, 80);
+        for (let box = el.parentElement && el.parentElement.closest('h1, h2, h3, h4, a[href]'); box; box = box.parentElement && box.parentElement.closest('h1, h2, h3, h4, a[href]')) {
+          if (!box.getClientRects().length || getComputedStyle(box).visibility === 'hidden') continue;
+          const own = squash(shown ? box.innerText.split(shown).join(' ') : box.innerText, 80);
+          if (own) return own;
+        }
+        return '';
       };
       const near = (selector, levels) => {
         for (let a = el.parentElement, i = 0; a && i < levels; a = a.parentElement, i += 1) {
@@ -360,10 +364,14 @@ export function pageText(start, length) {
       // The heading just above a date names what it dates (a release, a post); headings
       // after it belong to the body. Only what is on screen: a hidden menu's heading names nothing.
       // A date inside the link or heading that names it (a card "Launch · Yesterday").
+      // Walks outward: a date-only link inside its heading gives nothing, the heading does.
       const around = () => {
-        const box = el.parentElement && el.parentElement.closest('h1, h2, h3, h4, a[href]');
-        if (!box || !box.getClientRects().length || getComputedStyle(box).visibility === 'hidden') return '';
-        return squash(shown ? box.innerText.split(shown).join(' ') : box.innerText, 80);
+        for (let box = el.parentElement && el.parentElement.closest('h1, h2, h3, h4, a[href]'); box; box = box.parentElement && box.parentElement.closest('h1, h2, h3, h4, a[href]')) {
+          if (!box.getClientRects().length || getComputedStyle(box).visibility === 'hidden') continue;
+          const own = squash(shown ? box.innerText.split(shown).join(' ') : box.innerText, 80);
+          if (own) return own;
+        }
+        return '';
       };
       const near = (selector, levels) => {
         for (let a = el.parentElement, i = 0; a && i < levels; a = a.parentElement, i += 1) {
