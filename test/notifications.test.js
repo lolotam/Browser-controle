@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 // A fake Chrome with only what notifications touch.
 const state = {};
-function resetChrome({ granted = true, focusedTab = 99, tabs = { 7: { id: 7, windowId: 3 } }, panelOpens = true } = {}) {
+function resetChrome({ granted = true, focusedTab = 99, focusedGroup = -1, tabs = { 7: { id: 7, windowId: 3 } }, panelOpens = true } = {}) {
   Object.assign(state, { created: [], cleared: [], focused: [], activated: [], panels: [], session: {}, granted, tabs });
   globalThis.chrome = {
     runtime: { getURL: (p) => `chrome-extension://x/${p}` },
@@ -18,7 +18,7 @@ function resetChrome({ granted = true, focusedTab = 99, tabs = { 7: { id: 7, win
       update: async (id) => { state.focused.push(id); },
     },
     tabs: {
-      query: async () => [{ id: focusedTab }],
+      query: async () => [{ id: focusedTab, groupId: focusedGroup }],
       get: async (id) => { if (!state.tabs[id]) throw new Error('No tab'); return state.tabs[id]; },
       update: async (id) => { state.activated.push(id); },
       onRemoved: { addListener() {} },
@@ -154,4 +154,13 @@ test('an answered question withdraws its notification', async () => {
   await new Promise((r) => setTimeout(r, 20));
   assert.deepEqual(state.cleared, [state.created[0].id]);
   runner.dispose();
+});
+
+test('no notification while the user is on another tab of the same session', async () => {
+  // The agent works in a background tab (7) it opened; the user watches tab 12 of the same group.
+  resetChrome({ focusedTab: 12, focusedGroup: 4 });
+  assert.equal(await notifyTransition({ kind: 'finished', sessionId: 's1', tabId: 7, groupId: 4, settings: on }), null);
+  // A tab of another group still counts as away.
+  resetChrome({ focusedTab: 12, focusedGroup: 9 });
+  assert.ok(await notifyTransition({ kind: 'finished', sessionId: 's1', tabId: 7, groupId: 4, settings: on }));
 });

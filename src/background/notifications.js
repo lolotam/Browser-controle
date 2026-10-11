@@ -24,10 +24,10 @@ export async function notificationsAllowed(settings) {
  * whose tab is `tabId`. Never throws: a notification must not affect the task.
  * Returns the notification id, or null when none was shown.
  */
-export async function notifyTransition({ kind, sessionId, tabId, settings }) {
+export async function notifyTransition({ kind, sessionId, tabId, groupId = null, settings }) {
   try {
     if (!TEXT[kind] || !(await notificationsAllowed(settings))) return null;
-    if (await userIsLookingAt(tabId)) return null;
+    if (await userIsLookingAt(tabId, groupId)) return null;
     const tab = Number.isInteger(tabId) ? await chrome.tabs.get(tabId).catch(() => null) : null;
     const language = resolveLanguage(settings.uiLanguage, chrome.i18n?.getUILanguage?.());
     const messages = MESSAGES[language] ?? MESSAGES.en;
@@ -80,12 +80,17 @@ export async function forgetNotification(id) {
   await takeRoute(id);
 }
 
-async function userIsLookingAt(tabId) {
-  if (!Number.isInteger(tabId)) return false;
+/**
+ * Whether the user is on this session: its tab, or any tab of its tab group (the agent
+ * may have opened a background tab while the user watches the panel on another one).
+ */
+async function userIsLookingAt(tabId, groupId) {
+  if (!Number.isInteger(tabId) && !(Number.isInteger(groupId) && groupId >= 0)) return false;
   const win = await chrome.windows.getLastFocused({ windowTypes: ['normal'] }).catch(() => null);
   if (!win?.focused) return false;
   const [active] = await chrome.tabs.query({ active: true, windowId: win.id });
-  return active?.id === tabId;
+  if (!active) return false;
+  return active.id === tabId || (Number.isInteger(groupId) && groupId >= 0 && active.groupId === groupId);
 }
 
 async function saveRoute(id, route) {
