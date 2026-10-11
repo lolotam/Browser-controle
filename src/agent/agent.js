@@ -11,9 +11,17 @@ const SKIPPED_PAGE_CHANGED = 'Not executed: the page changed after an earlier ac
 const SKIPPED_AFTER_ERROR = 'Not executed: an earlier action in this turn failed. Decide again.';
 const SKIPPED_AFTER_ASK = 'Not executed: you asked the user a question in this turn. Read the answer, then decide again.';
 const SKIPPED_AFTER_BOUNDARY = 'Not executed: an earlier action in this turn needs you to look at its result first. Decide again.';
+const SKIPPED_FOR_MESSAGE = 'Not executed: the user sent you a message. Read it, then decide again.';
+const STEER_PREFIX = 'Message from the user while you work (it may change or add to the task):';
 const SUMMARY_PROMPT = 'You have reached the step limit. Stop using tools and write the final report now: what was done, all information collected with sources, and what remains.';
 
-export async function runAgent({ session, execute, task, maxSteps, signal, emit, fastLayer = null }) {
+/**
+ * `steering` (optional) delivers what the user sends while the task runs:
+ * `take()` returns the messages to read now, `waiting()` says one is due, and
+ * `turnSignal(signal)` is the model request's signal, aborted to deliver a message
+ * at once (the interrupted turn does not count as a step).
+ */
+export async function runAgent({ session, execute, task, maxSteps, signal, emit, fastLayer = null, steering = null }) {
   session.addUserMessage(task);
   let fast = fastLayer;
   let fastActions = [];
@@ -21,8 +29,10 @@ export async function runAgent({ session, execute, task, maxSteps, signal, emit,
 
   for (let step = 1; step <= maxSteps; step += 1) {
     throwIfAborted(signal);
+    for (const text of steering?.take() ?? []) session.addUserMessage(`${STEER_PREFIX}\n${text}`);
 
-    if (fast) {
+    // A message waiting for the model goes to it now; the fast layer can wait a step.
+    if (fast && !steering?.waiting()) {
       const started = Date.now();
       const outcome = await fast.step({ signal });
       throwIfAborted(signal);
@@ -48,9 +58,21 @@ export async function runAgent({ session, execute, task, maxSteps, signal, emit,
 
     const turnId = `turn-${step}`;
     emit({ type: 'thinking', step, turnId });
-    const turn = await timedTurn(session, { signal, onEvent: emit }, turnId, emit);
+    let turn;
+    try {
+      turn = await timedTurn(session, { signal: steering ? steering.turnSignal(signal) : signal, onEvent: emit }, turnId, emit);
+    } catch (err) {
+      // Interrupted to read a message: ask again with it, as the same step.
+      if (err?.name !== 'AbortError' || signal?.aborted || !steering) throw err;
+      emit({ type: 'text-reset' });
+      emit({ type: 'turn-interrupted', turnId });
+      step -= 1;
+      continue;
+    }
     if (turn.text) emit({ type: 'assistant-text', text: turn.text });
 
+    // A message arrived while the model wrote its answer: it reads that first.
+    if (!turn.toolCalls.length && steering?.waiting()) continue;
     if (!turn.toolCalls.length) {
       emit({ type: 'final', report: turn.text || '(The model ended without a report.)', success: true });
       return;
@@ -62,6 +84,11 @@ export async function runAgent({ session, execute, task, maxSteps, signal, emit,
     try {
       while (pending.length) {
         throwIfAborted(signal);
+        // A message from the user waits for no more of this batch, a report included.
+        if (steering?.waiting()) {
+          for (const skipped of pending.splice(0)) session.addToolResult(skipped.id, SKIPPED_FOR_MESSAGE);
+          break;
+        }
         const call = pending.shift();
         if (call.name === 'done') {
           session.addToolResult(call.id, 'Report delivered to the user.');

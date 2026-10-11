@@ -150,6 +150,21 @@ function suggestionLlm() {
   };
 }
 
+/** Mock LLM for the "steer" scenario: thinks slowly once, so the test can message it mid-task. */
+function slowThinkerLlm() {
+  let turn = 0;
+  return async (body) => {
+    turn += 1;
+    if (turn === 1) {
+      await new Promise((r) => setTimeout(r, 2500));
+      return ['read_page', {}];
+    }
+    const steered = body.messages.some((m) => m.role === 'user' && typeof m.content === 'string' && /Message from the user while you work[\s\S]*use blue/.test(m.content));
+    return ['done', { success: true, report: `## Done
+- steer seen: ${steered}` }];
+  };
+}
+
 /** Mock LLM for the "fast" scenario: only reads the hand-over note and reports. */
 function reportingLlm() {
   return (body) => {
@@ -205,7 +220,7 @@ function startServer(handlers) {
   const server = http.createServer((req, res) => {
     let raw = '';
     req.on('data', (c) => { raw += c; });
-    req.on('end', () => {
+    req.on('end', async () => {
       try {
         if (req.url === '/widgets') {
           res.writeHead(200, { 'Content-Type': 'text/html' }).end(WIDGETS);
@@ -225,7 +240,7 @@ function startServer(handlers) {
           }
           if (isBackup) counts.backup += 1;
           else counts.llm += 1;
-          const scripted = (isBackup ? handlers.backup : handlers.llm)(body);
+          const scripted = await (isBackup ? handlers.backup : handlers.llm)(body); // a script may take its time
           if (scripted === 'quota') {
             // OpenAI's own body for a used-up quota: a limit that will not clear, so no retry.
             res.writeHead(429, { 'Content-Type': 'application/json' }).end('{"error":{"message":"You exceeded your current quota, please check your plan and billing details.","type":"insufficient_quota","code":"insufficient_quota"}}');
@@ -263,7 +278,7 @@ function startServer(handlers) {
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, counts, base: `http://127.0.0.1:${server.address().port}` })));
 }
 
-async function runScenario(context, extensionId, { name, task, handlers, fast, expectReport, check, stopWorker = false, sendEarly = false, pagePath = '/page' }) {
+async function runScenario(context, extensionId, { name, task, handlers, fast, expectReport, check, stopWorker = false, sendEarly = false, pagePath = '/page', during = null }) {
   const { server, counts, base } = await startServer(handlers);
   const panel = await context.newPage();
   const pageErrors = [];
@@ -317,6 +332,7 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
       await panel.fill('#input', task);
       await panel.click('#sendBtn');
     }
+    const duringResult = during ? await during(panel) : null;
     const final = await panel.waitForSelector('.msg.final', { timeout: 60000 });
     const report = await final.innerText();
     if (process.env.E2E_SCREENSHOTS) {
@@ -333,7 +349,7 @@ async function runScenario(context, extensionId, { name, task, handlers, fast, e
     if (pageErrors.length) failures.push(`side panel errors: ${pageErrors.join(' | ')}`);
     const notices = await panel.$$eval('.notice.error', (rows) => rows.map((r) => r.innerText));
     if (notices.length) console.log(`notices: ${notices.join(' | ')}`);
-    failures.push(...check({ counts, steps, report, notices }));
+    failures.push(...check({ counts, steps, report, notices, duringResult, panel }));
     await target.close();
     return failures;
   } finally {
@@ -470,6 +486,21 @@ async function main() {
         pagePath: '/widgets',
         expectReport: 'Result: Maths / Delhi',
         check: ({ report }) => (/checks: subject ok, refusal ok, city ok/.test(report) ? [] : [`choose_suggestion checks failed: ${report.match(/checks: .*/)?.[0]}`]),
+      })),
+      ...(await runScenario(context, extensionId, {
+        name: 'steer',
+        task: 'Fill the form and report the result',
+        handlers: { llm: slowThinkerLlm() },
+        // While the model thinks, send a message: it waits as pending, then is read.
+        during: async (panel) => {
+          await panel.waitForSelector('#stopBtn:not([hidden])');
+          await panel.fill('#input', 'use blue');
+          await panel.click('#sendBtn');
+          await panel.waitForSelector('#pending li', { timeout: 5000 });
+          return panel.$eval('#pending li .chip', (n) => n.textContent);
+        },
+        expectReport: 'steer seen: true',
+        check: ({ duringResult }) => (duringResult === 'after this step' ? [] : [`expected a pending "after this step" message, got ${duringResult}`]),
       })),
       ...(await runScenario(context, extensionId, {
         name: 'worker-restart',
