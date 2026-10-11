@@ -41,18 +41,57 @@ export function parseArgs(argv, { sets, today = new Date().toISOString().slice(0
 }
 
 /**
- * The checked-out commit, whether tracked files differ from it, and a hash of
- * that difference: two runs from the same dirty commit with different edits
- * must not look like the same code.
+ * The checked-out commit, whether the working tree differs from it, and a hash of
+ * that difference: two runs from the same dirty commit with different edits must
+ * not look like the same code. New files git does not track yet count too (a new
+ * helper imported by tracked code), with their contents; ignored files (.env*,
+ * results) do not.
  */
 export function gitState(root) {
   const git = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   try {
     const diff = git('diff', 'HEAD', '--binary');
-    return { commit: git('rev-parse', 'HEAD').trim(), dirty: diff !== '', diff: diff ? crypto.createHash('sha256').update(diff).digest('hex').slice(0, 16) : null };
+    const untracked = git('ls-files', '--others', '--exclude-standard', '-z').split('\0').filter(Boolean).sort();
+    const hash = crypto.createHash('sha256').update(diff);
+    // Paths this repository ignores (.env*, node_modules/, results), asked of git so its
+    // own rules apply even inside an untracked nested repository it lists as one entry.
+    const ignored = (paths) => {
+      if (!paths.length) return new Set();
+      try {
+        const out = execFileSync('git', ['check-ignore', '--stdin', '-z', '--no-index'], { cwd: root, input: paths.join('\0'), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+        return new Set(out.split('\0').filter(Boolean));
+      } catch (err) {
+        if (err.status === 1) return new Set(); // exit 1: none of them is ignored
+        throw err;
+      }
+    };
+    for (const entry of untracked) hashPath(hash, root, entry.replace(/\/$/, ''), ignored);
+    const dirty = diff !== '' || untracked.length > 0;
+    return { commit: git('rev-parse', 'HEAD').trim(), dirty, diff: dirty ? hash.digest('hex').slice(0, 16) : null };
   } catch {
-    return { commit: 'unknown', dirty: true, diff: 'unknown' };
+    // Unknown state never matches another run, so a resume is refused rather than mixed.
+    return { commit: 'unknown', dirty: true, diff: `unknown-${crypto.randomUUID()}` };
   }
+}
+
+/**
+ * A file into the hash as git would see it: its path, its kind and executable bit,
+ * and its bytes (a symlink: its target). A directory (an untracked nested repository)
+ * adds only its files, like git, which tracks no directories: one holding nothing
+ * but ignored entries adds nothing. Ignored entries are never read or descended into.
+ */
+function hashPath(hash, root, rel, ignored) {
+  const full = path.join(root, rel);
+  const stat = fs.lstatSync(full);
+  if (stat.isDirectory()) {
+    const children = fs.readdirSync(full).filter((name) => name !== '.git').sort().map((name) => path.posix.join(rel.split(path.sep).join('/'), name));
+    const skip = ignored(children);
+    for (const child of children) if (!skip.has(child)) hashPath(hash, root, child, ignored);
+    return;
+  }
+  const kind = stat.isSymbolicLink() ? 'link' : stat.mode & 0o111 ? 'exec' : 'file';
+  hash.update(`\0${rel}\0${kind}\0`);
+  hash.update(stat.isSymbolicLink() ? fs.readlinkSync(full) : fs.readFileSync(full));
 }
 
 /** Settings with every key replaced, safe to record. */
