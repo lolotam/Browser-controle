@@ -6,7 +6,7 @@ import { MODEL_IDLE_MS, fetchModel, readSse } from '../lib/sse.js';
 import { ProviderHttpError, readError, withRetry } from '../lib/retry.js';
 import { getValidAuth } from './chatgpt-auth.js';
 import { kindOf } from '../agent/tool-kinds.js';
-import { NOTEBOOK_HEADER, NOTE_SAVED_ARGS, withoutNotebook } from '../agent/notebook.js';
+import { NOTEBOOK_HEADER, NOTE_SAVED_ARGS, trimKeepingNotebook, withoutNotebook } from '../agent/notebook.js';
 
 const BASE_URL = 'https://chatgpt.com/backend-api/codex';
 // The backend drops models newer than the asking client, so ask as the newest
@@ -219,9 +219,7 @@ export function compactInput(input) {
     if (item.type === 'function_call_output' && n < lastNotebook && typeof item.output === 'string') item.output = withoutNotebook(item.output);
   });
   for (const item of [...observations.slice(0, -KEEP_FULL_OBSERVATIONS), ...notebookReads.slice(0, -1)]) {
-    if (typeof item.output === 'string' && item.output.length > TRIMMED_OBSERVATION_CHARS + 50) {
-      item.output = `${item.output.slice(0, TRIMMED_OBSERVATION_CHARS)}\n…[older page state trimmed]`;
-    }
+    if (typeof item.output === 'string') item.output = trimKeepingNotebook(item.output, TRIMMED_OBSERVATION_CHARS);
   }
   // Notes already shown in a later notebook copy keep only a marker (see compactMessages).
   const resultAt = new Map(input.map((i, n) => [i.type === 'function_call_output' ? i.call_id : null, n]));

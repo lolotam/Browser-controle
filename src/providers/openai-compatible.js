@@ -7,7 +7,7 @@ import { requestJson } from '../lib/json.js';
 import { ProviderHttpError, readError, withRetry } from '../lib/retry.js';
 import { parseTextToolCalls } from './text-tool-calls.js';
 import { kindOf } from '../agent/tool-kinds.js';
-import { NOTEBOOK_HEADER, NOTE_SAVED_ARGS, withoutNotebook } from '../agent/notebook.js';
+import { NOTEBOOK_HEADER, NOTE_SAVED_ARGS, trimKeepingNotebook, withoutNotebook } from '../agent/notebook.js';
 
 const KEEP_FULL_OBSERVATIONS = 2;
 const TRIMMED_OBSERVATION_CHARS = 400;
@@ -261,9 +261,7 @@ export function compactMessages(messages) {
     if (m.role === 'tool' && i < lastNotebook && typeof m.content === 'string') m.content = withoutNotebook(m.content);
   });
   for (const m of [...observations.slice(0, -KEEP_FULL_OBSERVATIONS), ...notebookReads.slice(0, -1)]) {
-    if (typeof m.content === 'string' && m.content.length > TRIMMED_OBSERVATION_CHARS + 50) {
-      m.content = `${m.content.slice(0, TRIMMED_OBSERVATION_CHARS)}\n…[older page state trimmed]`;
-    }
+    if (typeof m.content === 'string') m.content = trimKeepingNotebook(m.content, TRIMMED_OBSERVATION_CHARS);
   }
   // A note's text is in the latest notebook copy, so once one follows, the call keeps
   // only a marker and old notes no longer grow the context.
